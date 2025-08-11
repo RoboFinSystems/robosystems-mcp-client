@@ -1,4 +1,4 @@
-# @robosystems/mcp
+# RoboSystems MCP Client
 
 MCP (Model Context Protocol) client adapter for connecting AI agents to RoboSystems Financial Knowledge Graph API endpoints.
 
@@ -175,10 +175,9 @@ For support:
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-MIT © 2025 RoboSystems Team
+MIT © 2025 Harbinger FinLab
 
 ## Related Projects
 
-- [robosystems-service](https://github.com/HarbingerFinLab/robosystems-service) - Backend API service
 - [robosystems-sdk](https://www.npmjs.com/package/robosystems-sdk) - JavaScript/TypeScript SDK
 - [robosystems-python-sdk](https://pypi.org/project/robosystems-sdk/) - Python SDK

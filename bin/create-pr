@@ -1,0 +1,127 @@
+#!/bin/bash
+set -e
+
+# Create PR script using GitHub Actions
+# Creates a PR from current branch to target branch
+# Usage: ./bin/create-pr [target_branch] [pr_type]
+
+# Default values
+TARGET_BRANCH=${1:-main}
+PR_TYPE=${2:-release}
+
+# Get current branch
+CURRENT_BRANCH=$(git branch --show-current)
+
+# Validate current branch is not target branch
+if [ "$CURRENT_BRANCH" = "$TARGET_BRANCH" ]; then
+  echo "❌ Cannot create PR: you're currently on the target branch ($TARGET_BRANCH)"
+  echo "Switch to your feature/release branch first: git checkout <your-branch>"
+  exit 1
+fi
+
+# Validate target branch
+if [[ "$TARGET_BRANCH" != "main" ]]; then
+  echo "⚠️  Warning: Target branch '$TARGET_BRANCH' is not 'main'."
+  echo "   This repository typically uses 'main' as the primary branch."
+  read -p "   Continue anyway? (y/N): " -n 1 -r
+  echo
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Aborted."
+    exit 1
+  fi
+fi
+
+# Validate PR type
+if [[ "$PR_TYPE" != "release" && "$PR_TYPE" != "feature" && "$PR_TYPE" != "bugfix" && "$PR_TYPE" != "hotfix" ]]; then
+  echo "❌ Invalid PR type: $PR_TYPE. Use 'release', 'feature', 'bugfix', or 'hotfix'."
+  exit 1
+fi
+
+echo "📋 Creating PR..."
+echo "  Source Branch: $CURRENT_BRANCH"
+echo "  Target Branch: $TARGET_BRANCH"
+echo "  PR Type: $PR_TYPE"
+echo ""
+
+# Check for uncommitted changes
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "⚠️  You have uncommitted changes. Please commit or stash them first."
+  echo ""
+  echo "Uncommitted files:"
+  git status --porcelain
+  exit 1
+fi
+
+# Push current branch to remote if needed
+echo "📤 Ensuring current branch is pushed to remote..."
+if ! git show-ref --verify --quiet refs/remotes/origin/$CURRENT_BRANCH; then
+  echo "Branch $CURRENT_BRANCH doesn't exist on remote. Pushing..."
+  git push -u origin $CURRENT_BRANCH
+else
+  echo "Pushing latest changes..."
+  git push origin $CURRENT_BRANCH
+fi
+
+echo ""
+echo "🚀 Triggering PR creation workflow..."
+
+# Trigger the GitHub Actions workflow
+gh workflow run create-pr.yml \
+  --field source_branch="$CURRENT_BRANCH" \
+  --field target_branch="$TARGET_BRANCH" \
+  --field pr_type="$PR_TYPE"
+
+echo "⏳ Waiting for PR to be created..."
+
+# Wait for workflow to complete and find the PR
+MAX_ATTEMPTS=30  # 5 minutes with 10-second intervals
+ATTEMPT=1
+
+while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+    echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Checking for created PR..."
+    
+    # Check if workflow failed
+    WORKFLOW_STATUS=$(gh run list --workflow=create-pr.yml --limit=1 --json status --jq '.[0].status' 2>/dev/null || echo "")
+    if [ "$WORKFLOW_STATUS" = "failure" ]; then
+        echo "❌ Workflow failed. Check the GitHub Actions logs:"
+        echo "  gh run list --workflow=create-pr.yml"
+        exit 1
+    fi
+    
+    # Check if PR exists from current branch to target
+    PR_URL=$(gh pr list --head "$CURRENT_BRANCH" --base "$TARGET_BRANCH" --json url --jq '.[0].url' 2>/dev/null || echo "")
+    
+    if [ -n "$PR_URL" ] && [ "$PR_URL" != "null" ]; then
+        echo "✅ PR created successfully!"
+        echo "🔗 PR URL: $PR_URL"
+        echo ""
+        echo "📝 Review the PR description and make any necessary adjustments"
+        
+        # Try to open PR in browser
+        if command -v open >/dev/null 2>&1; then
+            echo "🌐 Opening PR in browser..."
+            open "$PR_URL"
+        elif command -v xdg-open >/dev/null 2>&1; then
+            echo "🌐 Opening PR in browser..."
+            xdg-open "$PR_URL"
+        else
+            echo "💡 Open the PR manually: $PR_URL"
+        fi
+        
+        exit 0
+    fi
+    
+    if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+        echo "❌ Timeout: PR was not created after 5 minutes"
+        echo "Check the GitHub Actions workflow status:"
+        echo "  gh run list --workflow=create-pr.yml"
+        echo ""
+        echo "You can also create the PR manually:"
+        echo "  gh pr create --base $TARGET_BRANCH --head $CURRENT_BRANCH"
+        exit 1
+    fi
+    
+    echo "PR not yet created, waiting 10 seconds..."
+    sleep 10
+    ATTEMPT=$((ATTEMPT + 1))
+done

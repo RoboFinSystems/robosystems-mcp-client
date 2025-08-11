@@ -1,0 +1,224 @@
+name: Create PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: "Source branch to create PR from (defaults to current branch)"
+        required: false
+        type: string
+      target_branch:
+        description: "Target branch to merge into"
+        required: true
+        type: choice
+        options:
+          - main
+        default: main
+      pr_type:
+        description: "Type of PR"
+        required: true
+        type: choice
+        options:
+          - release
+          - feature
+          - bugfix
+          - hotfix
+        default: release
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.ACTIONS_TOKEN || secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          token: ${{ secrets.ACTIONS_TOKEN || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Determine source branch
+        id: source-branch
+        run: |
+          if [ -n "${{ inputs.source_branch }}" ]; then
+            SOURCE_BRANCH="${{ inputs.source_branch }}"
+            echo "Using specified source branch: $SOURCE_BRANCH"
+            git checkout "$SOURCE_BRANCH"
+          else
+            SOURCE_BRANCH=$(git branch --show-current)
+            echo "Using current branch: $SOURCE_BRANCH"
+          fi
+          echo "source_branch=$SOURCE_BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Validate branches
+        id: validate
+        run: |
+          SOURCE_BRANCH="${{ steps.source-branch.outputs.source_branch }}"
+          TARGET_BRANCH="${{ inputs.target_branch }}"
+
+          echo "Source branch: $SOURCE_BRANCH"
+          echo "Target branch: $TARGET_BRANCH"
+
+          # Check if source branch exists
+          if ! git show-ref --verify --quiet refs/heads/$SOURCE_BRANCH && ! git show-ref --verify --quiet refs/remotes/origin/$SOURCE_BRANCH; then
+            echo "❌ Source branch $SOURCE_BRANCH does not exist"
+            exit 1
+          fi
+
+          # Check if target branch exists
+          if ! git show-ref --verify --quiet refs/heads/$TARGET_BRANCH && ! git show-ref --verify --quiet refs/remotes/origin/$TARGET_BRANCH; then
+            echo "❌ Target branch $TARGET_BRANCH does not exist"
+            exit 1
+          fi
+
+          # Check if branches are different
+          if [ "$SOURCE_BRANCH" = "$TARGET_BRANCH" ]; then
+            echo "❌ Source and target branches cannot be the same"
+            exit 1
+          fi
+
+          echo "✅ Branch validation passed"
+
+      - name: Analyze changes
+        id: analyze
+        run: |
+          SOURCE_BRANCH="${{ steps.source-branch.outputs.source_branch }}"
+          TARGET_BRANCH="${{ inputs.target_branch }}"
+          PR_TYPE="${{ inputs.pr_type }}"
+
+          # Get commit range for analysis
+          git fetch origin $TARGET_BRANCH
+          COMMIT_RANGE="origin/$TARGET_BRANCH...$SOURCE_BRANCH"
+
+          # Get diff stats
+          DIFF_STATS=$(git diff --stat --no-color $COMMIT_RANGE | head -50)
+          FILES_CHANGED=$(git diff --name-only $COMMIT_RANGE | wc -l)
+          COMMITS_COUNT=$(git rev-list --count $COMMIT_RANGE)
+
+          # Get commit messages
+          COMMIT_MESSAGES=$(git log --oneline --no-color $COMMIT_RANGE | head -20)
+
+          # Get version changes if any
+          CURRENT_VERSION=$(git show origin/$TARGET_BRANCH:package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin').toString()).version" 2>/dev/null || echo "unknown")
+          NEW_VERSION=$(node -p "require('./package.json').version")
+
+          echo "commit_range=$COMMIT_RANGE" >> $GITHUB_OUTPUT
+          echo "files_changed=$FILES_CHANGED" >> $GITHUB_OUTPUT
+          echo "commits_count=$COMMITS_COUNT" >> $GITHUB_OUTPUT
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate PR title and description
+        id: generate-pr
+        run: |
+          SOURCE_BRANCH="${{ steps.source-branch.outputs.source_branch }}"
+          TARGET_BRANCH="${{ inputs.target_branch }}"
+          PR_TYPE="${{ inputs.pr_type }}"
+          FILES_CHANGED="${{ steps.analyze.outputs.files_changed }}"
+          COMMITS_COUNT="${{ steps.analyze.outputs.commits_count }}"
+          CURRENT_VERSION="${{ steps.analyze.outputs.current_version }}"
+          NEW_VERSION="${{ steps.analyze.outputs.new_version }}"
+
+          # Generate PR title based on type
+          if [ "$PR_TYPE" = "release" ] && [ "$CURRENT_VERSION" != "$NEW_VERSION" ]; then
+            PR_TITLE="Release: v$NEW_VERSION"
+          elif [ "$PR_TYPE" = "feature" ]; then
+            PR_TITLE="Feature: ${SOURCE_BRANCH#feature/}"
+          elif [ "$PR_TYPE" = "bugfix" ]; then
+            PR_TITLE="Fix: ${SOURCE_BRANCH#bugfix/}"
+          elif [ "$PR_TYPE" = "hotfix" ]; then
+            PR_TITLE="Hotfix: ${SOURCE_BRANCH#hotfix/}"
+          else
+            PR_TITLE="$PR_TYPE: $SOURCE_BRANCH"
+          fi
+
+          # Generate PR description
+          cat > /tmp/pr_description.txt << EOF
+          ## Summary
+
+          This PR contains $COMMITS_COUNT commits affecting $FILES_CHANGED files.
+
+          **Type:** $PR_TYPE
+          **Source:** \`$SOURCE_BRANCH\`
+          **Target:** \`$TARGET_BRANCH\`
+          EOF
+
+          if [ "$CURRENT_VERSION" != "$NEW_VERSION" ]; then
+            echo "**Version:** $CURRENT_VERSION → $NEW_VERSION" >> /tmp/pr_description.txt
+          fi
+
+          cat >> /tmp/pr_description.txt << EOF
+
+          ## Changes
+
+          Please review the changes in this PR and ensure:
+          - [ ] Code follows project conventions
+          - [ ] Tests pass (if applicable)
+          - [ ] Documentation is updated (if needed)
+          - [ ] Version bump is appropriate (for releases)
+
+          ## Testing
+
+          \`\`\`bash
+          npm install
+          npm test
+          \`\`\`
+
+          ---
+          **Branch Info:**
+          - Source: \`$SOURCE_BRANCH\`
+          - Target: \`$TARGET_BRANCH\`
+          - Type: $PR_TYPE
+          EOF
+
+          PR_DESCRIPTION=$(cat /tmp/pr_description.txt)
+
+          {
+            echo "pr_title<<EOF"
+            echo "$PR_TITLE"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+          {
+            echo "pr_description<<EOF"
+            echo "$PR_DESCRIPTION"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create Pull Request
+        id: create-pr
+        run: |
+          SOURCE_BRANCH="${{ steps.source-branch.outputs.source_branch }}"
+          TARGET_BRANCH="${{ inputs.target_branch }}"
+          PR_TITLE="${{ steps.generate-pr.outputs.pr_title }}"
+          PR_DESCRIPTION="${{ steps.generate-pr.outputs.pr_description }}"
+
+          # Create the PR
+          PR_URL=$(gh pr create \
+            --title "$PR_TITLE" \
+            --body "$PR_DESCRIPTION" \
+            --base "$TARGET_BRANCH" \
+            --head "$SOURCE_BRANCH")
+
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "✅ Pull Request created: $PR_URL"
+
+      - name: Create summary
+        run: |
+          SOURCE_BRANCH="${{ steps.source-branch.outputs.source_branch }}"
+          TARGET_BRANCH="${{ inputs.target_branch }}"
+          PR_URL="${{ steps.create-pr.outputs.pr_url }}"
+
+          echo "## 🚀 PR Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**PR URL:** [$PR_URL]($PR_URL)" >> $GITHUB_STEP_SUMMARY
+          echo "**Source:** \`$SOURCE_BRANCH\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** \`$TARGET_BRANCH\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Type:** ${{ inputs.pr_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### PR Details" >> $GITHUB_STEP_SUMMARY
+          echo "**Title:** ${{ steps.generate-pr.outputs.pr_title }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Files Changed:** ${{ steps.analyze.outputs.files_changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commits:** ${{ steps.analyze.outputs.commits_count }}" >> $GITHUB_STEP_SUMMARY

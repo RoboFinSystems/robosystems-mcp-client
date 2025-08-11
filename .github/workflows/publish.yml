@@ -1,74 +1,69 @@
 name: Publish to npm
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
   workflow_dispatch:
-    inputs:
-      version_type:
-        description: 'Version bump type'
-        required: true
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
-        default: patch
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     
     permissions:
-      contents: write  # Need write to push commits
+      contents: read
       id-token: write
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.ACTIONS_TOKEN || secrets.GITHUB_TOKEN }}
+      
+      - name: Get version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+      
+      - name: Check if already published
+        id: check-published
+        run: |
+          # Check if this version is already published to npm
+          if npm view @robosystems/mcp@${{ steps.version.outputs.version }} version 2>/dev/null; then
+            echo "already_published=true" >> $GITHUB_OUTPUT
+            echo "Version ${{ steps.version.outputs.version }} is already published"
+          else
+            echo "already_published=false" >> $GITHUB_OUTPUT
+            echo "Version ${{ steps.version.outputs.version }} is not yet published"
+          fi
       
       - name: Setup Node.js
+        if: steps.check-published.outputs.already_published == 'false'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
       
       - name: Install dependencies
+        if: steps.check-published.outputs.already_published == 'false'
         run: npm install
       
-      - name: Update version
-        id: version
-        run: |
-          NEW_VERSION=$(npm version ${{ github.event.inputs.version_type }} --no-git-tag-version)
-          echo "version=${NEW_VERSION#v}" >> $GITHUB_OUTPUT
-      
       - name: Publish to npm
+        if: steps.check-published.outputs.already_published == 'false'
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          
-      - name: Commit version update
+      
+      - name: Create summary
+        if: steps.check-published.outputs.already_published == 'false'
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json
-          git commit -m "chore: bump version to $(node -p "require('./package.json').version") [skip ci]"
-          git push
-          
-      - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          release_name: Release v${{ steps.version.outputs.version }}
-          body: |
-            ## Changes
-            - Version bump: ${{ github.event.inputs.version_type }}
-            
-            ## Installation
-            ```bash
-            npm install @robosystems/mcp@${{ steps.version.outputs.version }}
-            ```
-          draft: false
-          prerelease: false
+          echo "## 📦 Published to npm" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Package:** [@robosystems/mcp](https://www.npmjs.com/package/@robosystems/mcp)" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** v${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Installation" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "npm install @robosystems/mcp@${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
