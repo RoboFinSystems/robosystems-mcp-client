@@ -1,0 +1,62 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Install Dependencies",
+      "type": "shell",
+      "command": "npm install",
+      "problemMatcher": []
+    },
+    {
+      "label": "Create Release",
+      "type": "shell",
+      "command": "./bin/create-release ${input:versionType}",
+      "problemMatcher": []
+    },
+    {
+      "label": "Create PR",
+      "type": "shell",
+      "command": "./bin/create-pr ${input:targetBranch} ${input:prType} ${input:claudeReview}",
+      "problemMatcher": []
+    },
+    {
+      "label": "Publish to npm",
+      "type": "shell",
+      "command": "gh workflow run publish.yml --field version_type=${input:versionType}",
+      "problemMatcher": []
+    },
+  ],
+  "inputs": [
+    {
+      "id": "versionType",
+      "type": "pickString",
+      "description": "Version type for release",
+      "options": [
+        "patch",
+        "minor",
+        "major"
+      ],
+      "default": "patch"
+    },
+    {
+      "id": "targetBranch",
+      "type": "promptString",
+      "description": "Target branch for PR:",
+      "default": "main"
+    },
+    {
+      "id": "prType",
+      "type": "pickString",
+      "description": "Choose PR type:",
+      "default": "release",
+      "options": ["release", "feature", "bugfix", "hotfix"]
+    },
+    {
+      "id": "claudeReview",
+      "type": "pickString",
+      "description": "Request Claude review automatically",
+      "default": "true",
+      "options": ["true", "false"]
+    }
+  ]
+}
