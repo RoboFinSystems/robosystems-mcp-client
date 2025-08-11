@@ -1,0 +1,93 @@
+name: Tag Release
+
+concurrency:
+  group: robosystems-mcp-client-tag-release
+  cancel-in-progress: false
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  tag-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get Version from package.json
+        id: get-version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Found version: $VERSION"
+
+      - name: Check If Tag Exists
+        id: check-tag
+        run: |
+          if [ $(git tag -l "v${{ steps.get-version.outputs.version }}") ]; then
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+            echo "Tag v${{ steps.get-version.outputs.version }} already exists"
+          else
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+            echo "Tag v${{ steps.get-version.outputs.version }} does not exist yet"
+          fi
+
+      - name: Create Release Tag
+        if: steps.check-tag.outputs.tag_exists == 'false'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ steps.get-version.outputs.version }}" -m "Release v${{ steps.get-version.outputs.version }}"
+          git push origin "v${{ steps.get-version.outputs.version }}"
+
+      - name: Create GitHub Release
+        if: steps.check-tag.outputs.tag_exists == 'false'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.get-version.outputs.version }}
+          name: Release v${{ steps.get-version.outputs.version }}
+          body: |
+            # RoboSystems MCP Client v${{ steps.get-version.outputs.version }}
+
+            MCP client adapter for connecting AI agents to RoboSystems Financial Knowledge Graph API.
+
+            ## Installation
+
+            ```bash
+            npm install @robosystems/mcp
+            ```
+
+            ## Usage
+
+            Add to your MCP settings:
+
+            ```json
+            {
+              "mcpServers": {
+                "robosystems": {
+                  "command": "npx",
+                  "args": ["-y", "@robosystems/mcp"],
+                  "env": {
+                    "ROBOSYSTEMS_API_KEY": "your-api-key",
+                    "ROBOSYSTEMS_GRAPH_ID": "your-graph-id"
+                  }
+                }
+              }
+            }
+            ```
+
+            ## Links
+
+            - [npm Package](https://www.npmjs.com/package/@robosystems/mcp)
+            - [Documentation](https://github.com/HarbingerFinLab/robosystems-mcp-client#readme)
+            - [API Documentation](https://api.robosystems.ai/docs)
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
