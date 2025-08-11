@@ -2,12 +2,13 @@
 set -e
 
 # Create PR script using GitHub Actions
-# Creates a PR from current branch to target branch
-# Usage: ./bin/create-pr [target_branch] [pr_type]
+# Analyzes current branch changes and creates a comprehensive PR with Claude
+# Usage: ./bin/create-pr [target_branch] [pr_type] [claude_review]
 
 # Default values
 TARGET_BRANCH=${1:-main}
 PR_TYPE=${2:-release}
+CLAUDE_REVIEW=${3:-true}
 
 # Get current branch
 CURRENT_BRANCH=$(git branch --show-current)
@@ -20,15 +21,9 @@ if [ "$CURRENT_BRANCH" = "$TARGET_BRANCH" ]; then
 fi
 
 # Validate target branch
-if [[ "$TARGET_BRANCH" != "main" ]]; then
-  echo "⚠️  Warning: Target branch '$TARGET_BRANCH' is not 'main'."
-  echo "   This repository typically uses 'main' as the primary branch."
-  read -p "   Continue anyway? (y/N): " -n 1 -r
-  echo
-  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Aborted."
-    exit 1
-  fi
+if [[ "$TARGET_BRANCH" != "main" && "$TARGET_BRANCH" != "staging" ]]; then
+  echo "❌ Invalid target branch: $TARGET_BRANCH. Use 'main' or 'staging'."
+  exit 1
 fi
 
 # Validate PR type
@@ -37,10 +32,18 @@ if [[ "$PR_TYPE" != "release" && "$PR_TYPE" != "feature" && "$PR_TYPE" != "bugfi
   exit 1
 fi
 
-echo "📋 Creating PR..."
+# Validate Claude review parameter
+if [[ "$CLAUDE_REVIEW" != "true" && "$CLAUDE_REVIEW" != "false" ]]; then
+  echo "❌ Invalid claude_review value: $CLAUDE_REVIEW. Use 'true' or 'false'."
+  exit 1
+fi
+
+echo "🤖 Creating Claude-powered PR..."
+echo "📋 Details:"
 echo "  Source Branch: $CURRENT_BRANCH"
 echo "  Target Branch: $TARGET_BRANCH"
 echo "  PR Type: $PR_TYPE"
+echo "  Claude Review: $CLAUDE_REVIEW"
 echo ""
 
 # Check for uncommitted changes
@@ -63,15 +66,16 @@ else
 fi
 
 echo ""
-echo "🚀 Triggering PR creation workflow..."
+echo "🚀 Triggering Claude analysis workflow..."
 
 # Trigger the GitHub Actions workflow
 gh workflow run create-pr.yml \
   --field source_branch="$CURRENT_BRANCH" \
   --field target_branch="$TARGET_BRANCH" \
-  --field pr_type="$PR_TYPE"
+  --field pr_type="$PR_TYPE" \
+  --field claude_review="$CLAUDE_REVIEW"
 
-echo "⏳ Waiting for PR to be created..."
+echo "⏳ Waiting for Claude to analyze changes and create PR..."
 
 # Wait for workflow to complete and find the PR
 MAX_ATTEMPTS=30  # 5 minutes with 10-second intervals
@@ -79,7 +83,7 @@ ATTEMPT=1
 
 while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
     echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Checking for created PR..."
-    
+
     # Check if workflow failed
     WORKFLOW_STATUS=$(gh run list --workflow=create-pr.yml --limit=1 --json status --jq '.[0].status' 2>/dev/null || echo "")
     if [ "$WORKFLOW_STATUS" = "failure" ]; then
@@ -87,16 +91,17 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
         echo "  gh run list --workflow=create-pr.yml"
         exit 1
     fi
-    
+
     # Check if PR exists from current branch to target
     PR_URL=$(gh pr list --head "$CURRENT_BRANCH" --base "$TARGET_BRANCH" --json url --jq '.[0].url' 2>/dev/null || echo "")
-    
+
     if [ -n "$PR_URL" ] && [ "$PR_URL" != "null" ]; then
         echo "✅ PR created successfully!"
         echo "🔗 PR URL: $PR_URL"
         echo ""
+        echo "🎉 Claude has analyzed your changes and created a comprehensive PR"
         echo "📝 Review the PR description and make any necessary adjustments"
-        
+
         # Try to open PR in browser
         if command -v open >/dev/null 2>&1; then
             echo "🌐 Opening PR in browser..."
@@ -107,10 +112,10 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
         else
             echo "💡 Open the PR manually: $PR_URL"
         fi
-        
+
         exit 0
     fi
-    
+
     if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
         echo "❌ Timeout: PR was not created after 5 minutes"
         echo "Check the GitHub Actions workflow status:"
@@ -120,7 +125,7 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
         echo "  gh pr create --base $TARGET_BRANCH --head $CURRENT_BRANCH"
         exit 1
     fi
-    
+
     echo "PR not yet created, waiting 10 seconds..."
     sleep 10
     ATTEMPT=$((ATTEMPT + 1))

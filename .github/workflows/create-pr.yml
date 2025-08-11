@@ -1,4 +1,4 @@
-name: Create PR
+name: Claude Create PR
 
 on:
   workflow_dispatch:
@@ -13,6 +13,7 @@ on:
         type: choice
         options:
           - main
+          - staging
         default: main
       pr_type:
         description: "Type of PR"
@@ -24,19 +25,24 @@ on:
           - bugfix
           - hotfix
         default: release
+      claude_review:
+        description: "Request Claude review automatically"
+        required: false
+        type: boolean
+        default: true
 
 jobs:
-  create-pr:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  action:
+    runs-on: ubuntu-latest # Use GitHub-hosted runners for memory-intensive git/Claude operations
+    timeout-minutes: 10
     env:
-      GH_TOKEN: ${{ secrets.ACTIONS_TOKEN || secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.ACTIONS_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
-          token: ${{ secrets.ACTIONS_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.ACTIONS_TOKEN }}
           fetch-depth: 0
 
       - name: Determine source branch
@@ -81,7 +87,7 @@ jobs:
 
           echo "✅ Branch validation passed"
 
-      - name: Analyze changes
+      - name: Analyze changes with Claude
         id: analyze
         run: |
           SOURCE_BRANCH="${{ steps.source-branch.outputs.source_branch }}"
@@ -92,89 +98,141 @@ jobs:
           git fetch origin $TARGET_BRANCH
           COMMIT_RANGE="origin/$TARGET_BRANCH...$SOURCE_BRANCH"
 
-          # Get diff stats
-          DIFF_STATS=$(git diff --stat --no-color $COMMIT_RANGE | head -50)
+          # Get diff stats (limit output to prevent memory issues)
+          DIFF_STATS=$(git diff --stat --no-color $COMMIT_RANGE | head -50)  # Limit to 50 lines
           FILES_CHANGED=$(git diff --name-only $COMMIT_RANGE | wc -l)
           COMMITS_COUNT=$(git rev-list --count $COMMIT_RANGE)
 
-          # Get commit messages
-          COMMIT_MESSAGES=$(git log --oneline --no-color $COMMIT_RANGE | head -20)
+          # Get commit messages (limit to recent commits)
+          COMMIT_MESSAGES=$(git log --oneline --no-color $COMMIT_RANGE | head -20)  # Limit to 20 commits
 
-          # Get version changes if any
-          CURRENT_VERSION=$(git show origin/$TARGET_BRANCH:package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin').toString()).version" 2>/dev/null || echo "unknown")
-          NEW_VERSION=$(node -p "require('./package.json').version")
+          # Get detailed changes for analysis
+          DETAILED_CHANGES=$(git diff $COMMIT_RANGE --name-status --no-color | head -100)  # Limit to 100 files
 
+          # Create analysis prompt for Claude using envsubst
+          export SOURCE_BRANCH TARGET_BRANCH PR_TYPE FILES_CHANGED COMMITS_COUNT COMMIT_MESSAGES DIFF_STATS DETAILED_CHANGES
+
+          cat << 'EOF' > /tmp/pr_analysis_template.txt
+          I need you to analyze the following git changes and create a comprehensive PR title and description.
+
+          **Context:**
+          - Repository: Application codebase
+          - Source Branch: $SOURCE_BRANCH
+          - Target Branch: $TARGET_BRANCH
+          - PR Type: $PR_TYPE
+          - Files Changed: $FILES_CHANGED
+          - Commits: $COMMITS_COUNT
+
+          **Commit Messages:**
+          $COMMIT_MESSAGES
+
+          **Diff Statistics:**
+          $DIFF_STATS
+
+          **Detailed Changes:**
+          $DETAILED_CHANGES
+
+          Please provide:
+          1. A concise, descriptive PR title (50-72 characters)
+          2. A comprehensive PR description with:
+             - Summary of changes
+             - Key accomplishments
+             - Breaking changes (if any)
+             - Testing notes
+             - Infrastructure considerations (avoid mentioning specific script paths or commands)
+
+          Format the response as:
+          TITLE: [your title here]
+
+          DESCRIPTION:
+          [your description here]
+          EOF
+
+          # Create the final prompt by writing directly to a file (avoiding envsubst issues)
+          cat > /tmp/pr_analysis_prompt.txt << PROMPT_EOF
+          I need you to analyze the following git changes and create a comprehensive PR title and description.
+
+          **Context:**
+          - Source Branch: $SOURCE_BRANCH
+          - Target Branch: $TARGET_BRANCH
+          - PR Type: $PR_TYPE
+          - Files Changed: $FILES_CHANGED
+          - Commits: $COMMITS_COUNT
+
+          **Commit Messages:**
+          $COMMIT_MESSAGES
+
+          **Diff Statistics:**
+          $DIFF_STATS
+
+          **Detailed Changes:**
+          $DETAILED_CHANGES
+
+          Please provide:
+          1. A concise, descriptive PR title (50-72 characters)
+          2. A comprehensive PR description with:
+             - Summary of changes
+             - Key accomplishments
+             - Breaking changes (if any)
+             - Testing notes
+             - Infrastructure considerations (avoid mentioning specific script paths or commands)
+
+          Format the response as:
+          TITLE: [your title here]
+
+          DESCRIPTION:
+          [your description here]
+          PROMPT_EOF
+
+          echo "analysis_prompt_file=/tmp/pr_analysis_prompt.txt" >> $GITHUB_OUTPUT
           echo "commit_range=$COMMIT_RANGE" >> $GITHUB_OUTPUT
-          echo "files_changed=$FILES_CHANGED" >> $GITHUB_OUTPUT
-          echo "commits_count=$COMMITS_COUNT" >> $GITHUB_OUTPUT
-          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Generate PR title and description
-        id: generate-pr
+      - name: Call Claude API
+        id: claude
         run: |
-          SOURCE_BRANCH="${{ steps.source-branch.outputs.source_branch }}"
-          TARGET_BRANCH="${{ inputs.target_branch }}"
-          PR_TYPE="${{ inputs.pr_type }}"
-          FILES_CHANGED="${{ steps.analyze.outputs.files_changed }}"
-          COMMITS_COUNT="${{ steps.analyze.outputs.commits_count }}"
-          CURRENT_VERSION="${{ steps.analyze.outputs.current_version }}"
-          NEW_VERSION="${{ steps.analyze.outputs.new_version }}"
+          # Call Claude API with the analysis prompt
+          PROMPT=$(cat /tmp/pr_analysis_prompt.txt)
 
-          # Generate PR title based on type
-          if [ "$PR_TYPE" = "release" ] && [ "$CURRENT_VERSION" != "$NEW_VERSION" ]; then
-            PR_TITLE="Release: v$NEW_VERSION"
-          elif [ "$PR_TYPE" = "feature" ]; then
-            PR_TITLE="Feature: ${SOURCE_BRANCH#feature/}"
-          elif [ "$PR_TYPE" = "bugfix" ]; then
-            PR_TITLE="Fix: ${SOURCE_BRANCH#bugfix/}"
-          elif [ "$PR_TYPE" = "hotfix" ]; then
-            PR_TITLE="Hotfix: ${SOURCE_BRANCH#hotfix/}"
-          else
-            PR_TITLE="$PR_TYPE: $SOURCE_BRANCH"
+          # Create JSON payload using jq to properly escape content
+          RESPONSE=$(jq -n \
+            --arg model "claude-sonnet-4-20250514" \
+            --arg content "$PROMPT" \
+            '{
+              "model": $model,
+              "max_tokens": 4000,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": $content
+                }
+              ]
+            }' | curl -s -X POST "https://api.anthropic.com/v1/messages" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
+            -H "anthropic-version: 2023-06-01" \
+            -d @-)
+
+          # Check for API errors first
+          if echo "$RESPONSE" | jq -e '.error' > /dev/null; then
+            echo "❌ Claude API error: $(echo "$RESPONSE" | jq -r '.error.message')"
+            exit 1
           fi
 
-          # Generate PR description
-          cat > /tmp/pr_description.txt << EOF
-          ## Summary
+          # Extract title and description from Claude's response
+          CLAUDE_OUTPUT=$(echo "$RESPONSE" | jq -r '.content[0].text')
 
-          This PR contains $COMMITS_COUNT commits affecting $FILES_CHANGED files.
+          # Parse the title and description
+          PR_TITLE=$(echo "$CLAUDE_OUTPUT" | grep "^TITLE:" | sed 's/^TITLE: //')
+          PR_DESCRIPTION=$(echo "$CLAUDE_OUTPUT" | sed -n '/^DESCRIPTION:/,$ p' | sed '1d')
 
-          **Type:** $PR_TYPE
-          **Source:** \`$SOURCE_BRANCH\`
-          **Target:** \`$TARGET_BRANCH\`
-          EOF
-
-          if [ "$CURRENT_VERSION" != "$NEW_VERSION" ]; then
-            echo "**Version:** $CURRENT_VERSION → $NEW_VERSION" >> /tmp/pr_description.txt
+          # Validate that Claude returned meaningful content
+          if [ -z "$PR_TITLE" ] || [ -z "$PR_DESCRIPTION" ]; then
+            echo "❌ Claude returned empty title or description"
+            echo "Raw Claude output: $CLAUDE_OUTPUT"
+            exit 1
           fi
 
-          cat >> /tmp/pr_description.txt << EOF
-
-          ## Changes
-
-          Please review the changes in this PR and ensure:
-          - [ ] Code follows project conventions
-          - [ ] Tests pass (if applicable)
-          - [ ] Documentation is updated (if needed)
-          - [ ] Version bump is appropriate (for releases)
-
-          ## Testing
-
-          \`\`\`bash
-          npm install
-          npm test
-          \`\`\`
-
-          ---
-          **Branch Info:**
-          - Source: \`$SOURCE_BRANCH\`
-          - Target: \`$TARGET_BRANCH\`
-          - Type: $PR_TYPE
-          EOF
-
-          PR_DESCRIPTION=$(cat /tmp/pr_description.txt)
-
+          # Save to outputs (escape for JSON)
           {
             echo "pr_title<<EOF"
             echo "$PR_TITLE"
@@ -187,13 +245,31 @@ jobs:
             echo "EOF"
           } >> $GITHUB_OUTPUT
 
+          echo "✅ Claude analysis completed"
+
       - name: Create Pull Request
         id: create-pr
         run: |
           SOURCE_BRANCH="${{ steps.source-branch.outputs.source_branch }}"
           TARGET_BRANCH="${{ inputs.target_branch }}"
-          PR_TITLE="${{ steps.generate-pr.outputs.pr_title }}"
-          PR_DESCRIPTION="${{ steps.generate-pr.outputs.pr_description }}"
+          PR_TITLE="${{ steps.claude.outputs.pr_title }}"
+
+          # Create PR description with Claude analysis + footer
+          cat > /tmp/pr_description.txt << EOF
+          ${{ steps.claude.outputs.pr_description }}
+
+          ---
+          🤖 Generated with [Claude Code](https://claude.ai/code)
+
+          **Branch Info:**
+          - Source: \`$SOURCE_BRANCH\`
+          - Target: \`$TARGET_BRANCH\`
+          - Type: ${{ inputs.pr_type }}
+
+          Co-Authored-By: Claude <noreply@anthropic.com>
+          EOF
+
+          PR_DESCRIPTION=$(cat /tmp/pr_description.txt)
 
           # Create the PR
           PR_URL=$(gh pr create \
@@ -205,13 +281,21 @@ jobs:
           echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
           echo "✅ Pull Request created: $PR_URL"
 
+      - name: Request Claude review
+        if: ${{ inputs.claude_review }}
+        run: |
+          PR_NUMBER=$(echo "${{ steps.create-pr.outputs.pr_url }}" | sed 's/.*pull\///')
+
+          gh pr comment "$PR_NUMBER" --body "@claude please review this PR"
+          echo "✅ Claude review requested"
+
       - name: Create summary
         run: |
           SOURCE_BRANCH="${{ steps.source-branch.outputs.source_branch }}"
           TARGET_BRANCH="${{ inputs.target_branch }}"
           PR_URL="${{ steps.create-pr.outputs.pr_url }}"
 
-          echo "## 🚀 PR Created" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Claude-Powered PR Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**PR URL:** [$PR_URL]($PR_URL)" >> $GITHUB_STEP_SUMMARY
           echo "**Source:** \`$SOURCE_BRANCH\`" >> $GITHUB_STEP_SUMMARY
@@ -219,6 +303,6 @@ jobs:
           echo "**Type:** ${{ inputs.pr_type }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### PR Details" >> $GITHUB_STEP_SUMMARY
-          echo "**Title:** ${{ steps.generate-pr.outputs.pr_title }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Files Changed:** ${{ steps.analyze.outputs.files_changed }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commits:** ${{ steps.analyze.outputs.commits_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Title:** ${{ steps.claude.outputs.pr_title }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commits:** ${{ steps.analyze.outputs.commit_range }}" >> $GITHUB_STEP_SUMMARY
