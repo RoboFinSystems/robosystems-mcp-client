@@ -196,6 +196,7 @@ class RoboSystemsMCPClient {
 
   async getTools() {
     try {
+      console.error(`Fetching tools from ${this.baseUrl}/v1/${this.graphId}/mcp/tools`)
       const response = await fetch(
         `${this.baseUrl}/v1/${this.graphId}/mcp/tools`,
         {
@@ -204,13 +205,17 @@ class RoboSystemsMCPClient {
       )
 
       if (!response.ok) {
+        const text = await response.text()
+        console.error(`API returned ${response.status}: ${text}`)
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
 
       const data = await response.json()
+      console.error(`Got ${data.tools?.length || 0} tools from API`)
       return data.tools || []
     } catch (error) {
       console.error(`Failed to get tools: ${error.message}`)
+      console.error(`Stack: ${error.stack}`)
       return []
     }
   }
@@ -625,11 +630,13 @@ async function main() {
 
   if (!apiKey) {
     console.error('ROBOSYSTEMS_API_KEY environment variable is required')
+    console.error('Please set ROBOSYSTEMS_API_KEY in your MCP configuration')
     process.exit(1)
   }
 
   console.error(`RoboSystems MCP Client v${PACKAGE_VERSION}`)
   console.error(`Connecting to ${baseUrl} for graph ${graphId}`)
+  console.error(`API Key: ${apiKey.substring(0, 10)}...`)
 
   const remoteClient = new RoboSystemsMCPClient(baseUrl, apiKey, graphId)
 
@@ -688,11 +695,13 @@ async function main() {
 
   // Test connection and start server
   try {
+    console.error('Testing API connection...')
     const tools = await remoteClient.getTools()
     const toolNames = tools.map((t) => t.name)
     console.error(`Connected successfully. Available tools: ${toolNames.join(', ')}`)
 
     const transport = new StdioServerTransport()
+    console.error('Starting MCP stdio transport...')
     await server.connect(transport)
 
     console.error('RoboSystems MCP server running')
@@ -733,7 +742,15 @@ export {
 }
 
 // Only run as server if this is the main module
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Check if we're being run directly (not imported)
+// This works with both `node index.js` and `npx` invocations
+const isMainModule = 
+  import.meta.url === `file://${process.argv[1]}` ||
+  process.argv[1]?.endsWith('/mcp') ||  // npx binary name
+  process.argv[1]?.endsWith('/@robosystems/mcp') || // alternative npx name
+  process.argv[1]?.includes('robosystems-mcp'); // package name in path
+
+if (isMainModule) {
   // Run the server
   main().catch((error) => {
     console.error(`Fatal error: ${error.message}`)
