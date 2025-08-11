@@ -1,0 +1,47 @@
+{
+  "name": "@robosystems/mcp",
+  "version": "0.2.1",
+  "description": "MCP client adapter for connecting AI agents to RoboSystems Financial Knowledge Graph API endpoints",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "@robosystems/mcp": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "mcp",
+    "robosystems",
+    "financial",
+    "graph",
+    "kuzu",
+    "api",
+    "model-context-protocol"
+  ],
+  "author": "RoboSystems Team",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.1",
+    "eventsource": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HarbingerFinLab/robosystems-mcp-client"
+  },
+  "bugs": {
+    "url": "https://github.com/HarbingerFinLab/robosystems-mcp-client/issues"
+  },
+  "homepage": "https://github.com/HarbingerFinLab/robosystems-mcp-client#readme"
+}
