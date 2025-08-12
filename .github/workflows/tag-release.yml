@@ -85,8 +85,9 @@ jobs:
             ## Links
 
             - [npm Package](https://www.npmjs.com/package/@robosystems/mcp)
-            - [Documentation](https://github.com/HarbingerFinLab/robosystems-mcp-client#readme)
-            - [API Documentation](https://api.robosystems.ai/docs)
+            - [Documentation](https://github.com/RoboFinSystems/robosystems-mcp-client#readme)
+            - [GitHub Repository](https://github.com/RoboFinSystems/robosystems-mcp-client)
+            - [API Documentation](https://api.robosystems.ai)
           draft: false
           prerelease: false
         env:
