@@ -159,10 +159,9 @@ Once configured, you can ask Claude to:
 ### Getting Help
 
 For support:
-- **Documentation**: [https://docs.robosystems.ai](https://docs.robosystems.ai)
 - **API Reference**: [https://api.robosystems.ai](https://api.robosystems.ai)
-- **Issues**: [GitHub Issues](https://github.com/HarbingerFinLab/robosystems-mcp-client/issues)
-- **Email**: support@robosystems.ai
+- **Issues**: [GitHub Issues](https://github.com/RoboFinSystems/robosystems-mcp-client/issues)
+- **Email**: hello@robosystems.ai
 
 ## Security
 
@@ -179,5 +178,5 @@ MIT © 2025 Harbinger FinLab
 
 ## Related Projects
 
-- [robosystems-sdk](https://www.npmjs.com/package/robosystems-sdk) - JavaScript/TypeScript SDK
-- [robosystems-python-sdk](https://pypi.org/project/robosystems-sdk/) - Python SDK
+- [@robosystems/client](https://www.npmjs.com/package/@robosystems/client) - JavaScript/TypeScript Client
+- [robosystems-python-client](https://pypi.org/project/robosystems-client/) - Python Client
