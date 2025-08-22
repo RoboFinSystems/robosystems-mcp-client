@@ -161,7 +161,6 @@ Once configured, you can ask Claude to:
 For support:
 - **API Reference**: [https://api.robosystems.ai](https://api.robosystems.ai)
 - **Issues**: [GitHub Issues](https://github.com/RoboFinSystems/robosystems-mcp-client/issues)
-- **Email**: hello@robosystems.ai
 
 ## Security
 
