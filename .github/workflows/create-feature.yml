@@ -1,0 +1,100 @@
+name: Create Feature Branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch_type:
+        description: 'Type of branch to create'
+        required: true
+        type: choice
+        options:
+          - feature
+          - bugfix
+          - hotfix
+          - chore
+          - refactor
+        default: feature
+      branch_name:
+        description: 'Branch name (will be prefixed with type/)'
+        required: true
+        type: string
+      base_branch:
+        description: 'Base branch to create from'
+        required: false
+        type: string
+        default: 'main'
+
+jobs:
+  action:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: RoboFinSystems/robosystems-mcp-client
+          ref: ${{ inputs.base_branch }}
+          token: ${{ secrets.ACTIONS_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Sanitize branch name
+        id: sanitize
+        run: |
+          # Remove special characters and replace spaces with hyphens
+          SANITIZED_NAME=$(echo "${{ inputs.branch_name }}" | sed 's/[^a-zA-Z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+
+          # Convert to lowercase
+          SANITIZED_NAME=$(echo "$SANITIZED_NAME" | tr '[:upper:]' '[:lower:]')
+
+          # Construct full branch name
+          FULL_BRANCH_NAME="${{ inputs.branch_type }}/$SANITIZED_NAME"
+
+          echo "sanitized_name=$SANITIZED_NAME" >> $GITHUB_OUTPUT
+          echo "full_branch_name=$FULL_BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "Branch name: $FULL_BRANCH_NAME"
+
+      - name: Check if branch already exists
+        id: check-branch
+        run: |
+          BRANCH_NAME="${{ steps.sanitize.outputs.full_branch_name }}"
+
+          # Check if branch exists locally or remotely
+          if git show-ref --verify --quiet refs/heads/$BRANCH_NAME || git show-ref --verify --quiet refs/remotes/origin/$BRANCH_NAME; then
+            echo "❌ Branch $BRANCH_NAME already exists"
+            exit 1
+          else
+            echo "✅ Branch name is available"
+          fi
+
+      - name: Create and push branch
+        run: |
+          BRANCH_NAME="${{ steps.sanitize.outputs.full_branch_name }}"
+          BASE_BRANCH="${{ inputs.base_branch }}"
+
+          echo "Creating branch: $BRANCH_NAME from $BASE_BRANCH"
+
+          # Create the branch
+          git checkout -b "$BRANCH_NAME"
+
+          # Push to remote
+          git push -u origin "$BRANCH_NAME"
+
+          echo "✅ Branch $BRANCH_NAME created and pushed successfully"
+
+      - name: Create summary
+        run: |
+          echo "## 🌿 Feature Branch Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${{ steps.sanitize.outputs.full_branch_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Type:** ${{ inputs.branch_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Base:** ${{ inputs.base_branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Pull the branch locally: \`git fetch && git checkout ${{ steps.sanitize.outputs.full_branch_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "2. Make your changes and commit them" >> $GITHUB_STEP_SUMMARY
+          echo "3. Create a PR when ready: \`npm run pr:create\`" >> $GITHUB_STEP_SUMMARY

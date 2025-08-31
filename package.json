@@ -5,7 +5,8 @@
   "type": "module",
   "main": "index.js",
   "bin": {
-    "@robosystems/mcp": "./index.js"
+    "@robosystems/mcp": "./index.js",
+    "create-feature": "./bin/create-feature"
   },
   "files": [
     "index.js",
@@ -13,7 +14,10 @@
     "LICENSE"
   ],
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "feature:create": "./bin/create-feature",
+    "release:create": "./bin/create-release",
+    "pr:create": "./bin/create-pr"
   },
   "keywords": [
     "mcp",

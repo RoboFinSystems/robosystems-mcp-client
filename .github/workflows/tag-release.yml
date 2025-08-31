@@ -1,23 +1,23 @@
-name: Tag Release
-
-concurrency:
-  group: robosystems-mcp-client-tag-release
-  cancel-in-progress: false
+name: Claude Tag Release
 
 on:
   push:
-    branches: [main]
+    branches:
+      - 'release/**'
 
 jobs:
-  tag-release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  action:
+    runs-on: ubuntu-latest # Use GitHub-hosted runners for memory-intensive git/Claude operations
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          repository: RoboFinSystems/robosystems-mcp-client
+          ref: ${{ github.ref }}
+          token: ${{ secrets.ACTIONS_TOKEN }}
           fetch-depth: 0
 
       - name: Get Version from package.json
@@ -38,6 +38,180 @@ jobs:
             echo "Tag v${{ steps.get-version.outputs.version }} does not exist yet"
           fi
 
+      - name: Analyze changes since last release
+        if: steps.check-tag.outputs.tag_exists == 'false'
+        id: analyze-changes
+        run: |
+          VERSION="${{ steps.get-version.outputs.version }}"
+
+          # Get the last release tag
+          LAST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous release found, analyzing all commits"
+            COMMIT_RANGE="$(git rev-list --max-parents=0 HEAD)..HEAD"
+            LAST_TAG="initial"
+          else
+            COMMIT_RANGE="$LAST_TAG..HEAD"
+            echo "Analyzing changes since last release: $LAST_TAG"
+          fi
+
+          # Get change statistics
+          FILES_CHANGED=$(git diff --name-only $COMMIT_RANGE | wc -l)
+          COMMITS_COUNT=$(git rev-list --count $COMMIT_RANGE)
+          ADDITIONS=$(git diff --shortstat $COMMIT_RANGE | grep -oE '[0-9]+ insertions?' | grep -oE '[0-9]+' || echo "0")
+          DELETIONS=$(git diff --shortstat $COMMIT_RANGE | grep -oE '[0-9]+ deletions?' | grep -oE '[0-9]+' || echo "0")
+
+          # Get commit messages (limit to prevent memory issues)
+          COMMIT_MESSAGES=$(git log --oneline --no-color $COMMIT_RANGE | head -30)
+
+          # Get file changes focusing on Next.js patterns
+          DETAILED_CHANGES=$(git diff --name-status --no-color $COMMIT_RANGE | head -50)
+
+          # Get component and page changes
+          COMPONENTS_CHANGED=$(git diff --name-only $COMMIT_RANGE | grep -E '\.(tsx?|jsx?)$' | grep -v 'test\|spec' | wc -l || echo "0")
+          PAGES_CHANGED=$(git diff --name-only $COMMIT_RANGE | grep -E 'pages/|app/' | wc -l || echo "0")
+          STYLES_CHANGED=$(git diff --name-only $COMMIT_RANGE | grep -E '\.(css|scss|sass|less)$' | wc -l || echo "0")
+
+          # Get PR references from commit messages
+          PR_REFS=$(git log --oneline --no-color $COMMIT_RANGE | grep -oE '#[0-9]+' | sort -u | head -10 || echo "")
+
+          # Save outputs
+          echo "last_tag=$LAST_TAG" >> $GITHUB_OUTPUT
+          echo "commit_range=$COMMIT_RANGE" >> $GITHUB_OUTPUT
+          echo "files_changed=$FILES_CHANGED" >> $GITHUB_OUTPUT
+          echo "commits_count=$COMMITS_COUNT" >> $GITHUB_OUTPUT
+          echo "additions=$ADDITIONS" >> $GITHUB_OUTPUT
+          echo "deletions=$DELETIONS" >> $GITHUB_OUTPUT
+          echo "components_changed=$COMPONENTS_CHANGED" >> $GITHUB_OUTPUT
+          echo "pages_changed=$PAGES_CHANGED" >> $GITHUB_OUTPUT
+          echo "styles_changed=$STYLES_CHANGED" >> $GITHUB_OUTPUT
+
+          # Save multiline outputs
+          {
+            echo "commit_messages<<EOF"
+            echo "$COMMIT_MESSAGES"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+          {
+            echo "detailed_changes<<EOF"
+            echo "$DETAILED_CHANGES"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+          {
+            echo "pr_refs<<EOF"
+            echo "$PR_REFS"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Generate changelog with Claude
+        if: steps.check-tag.outputs.tag_exists == 'false'
+        id: generate-changelog
+        run: |
+          VERSION="${{ steps.get-version.outputs.version }}"
+          LAST_TAG="${{ steps.analyze-changes.outputs.last_tag }}"
+
+          # Create analysis prompt for Claude
+          cat > /tmp/changelog_prompt.txt << PROMPT_EOF
+          I need you to generate a concise but informative changelog for a Next.js SDK library release.
+
+          **Release Info:**
+          - App: RoboSystems (Comprehensive financial platform hub web application)
+          - Version: $VERSION
+          - Previous Version: $LAST_TAG
+          - Files Changed: ${{ steps.analyze-changes.outputs.files_changed }}
+          - Commits: ${{ steps.analyze-changes.outputs.commits_count }}
+          - Lines Added: ${{ steps.analyze-changes.outputs.additions }}
+          - Lines Deleted: ${{ steps.analyze-changes.outputs.deletions }}
+          - Components Changed: ${{ steps.analyze-changes.outputs.components_changed }}
+          - Pages Changed: ${{ steps.analyze-changes.outputs.pages_changed }}
+          - Styles Changed: ${{ steps.analyze-changes.outputs.styles_changed }}
+
+          **Recent Commits:**
+          ${{ steps.analyze-changes.outputs.commit_messages }}
+
+          **File Changes:**
+          ${{ steps.analyze-changes.outputs.detailed_changes }}
+
+          **PR References:**
+          ${{ steps.analyze-changes.outputs.pr_refs }}
+
+          Please generate a changelog for this Next.js SDK library that includes:
+          1. A brief 1-2 sentence summary focusing on user-facing improvements
+          2. Key features/improvements (bullet points) - focus on API changes
+          3. Breaking changes (if any) - clearly marked with ⚠️
+          4. Notable technical changes (performance, dependencies, build improvements)
+          5. Bug fixes affecting user experience
+
+          Keep it user-focused since this is a SDK library. Highlight:
+          - Platform integration improvements
+          - Navigation and user experience enhancements
+          - Performance optimizations
+          - SDK features improvements
+          - Mobile/responsive design changes
+          - API integration improvements
+
+          Use markdown formatting. Don't include a version header as that will be added separately.
+          Format your response as clean markdown without any prefix text.
+          PROMPT_EOF
+
+          echo "✅ Changelog prompt created"
+
+      - name: Call Claude API for changelog
+        if: steps.check-tag.outputs.tag_exists == 'false'
+        id: claude-changelog
+        run: |
+          # Call Claude API with the analysis prompt
+          PROMPT=$(cat /tmp/changelog_prompt.txt)
+
+          # Create a proper JSON payload using jq to handle escaping
+          PAYLOAD=$(jq -n \
+            --arg model "claude-sonnet-4-20250514" \
+            --arg content "$PROMPT" \
+            '{
+              "model": $model,
+              "max_tokens": 3000,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": $content
+                }
+              ]
+            }')
+
+          RESPONSE=$(curl -s -X POST "https://api.anthropic.com/v1/messages" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
+            -H "anthropic-version: 2023-06-01" \
+            -d "$PAYLOAD")
+
+          # Check for API errors
+          if echo "$RESPONSE" | jq -e '.error' > /dev/null; then
+            echo "❌ Claude API error: $(echo "$RESPONSE" | jq -r '.error.message')"
+            echo "Using fallback changelog"
+            CHANGELOG="## What's Changed\n\n- ${{ steps.analyze-changes.outputs.commits_count }} commits with ${{ steps.analyze-changes.outputs.files_changed }} files changed\n- ${{ steps.analyze-changes.outputs.components_changed }} components and ${{ steps.analyze-changes.outputs.pages_changed }} pages updated\n- ${{ steps.analyze-changes.outputs.additions }} additions and ${{ steps.analyze-changes.outputs.deletions }} deletions\n\nSee commit history for detailed changes."
+          else
+            # Extract changelog from Claude's response
+            CHANGELOG=$(echo "$RESPONSE" | jq -r '.content[0].text')
+
+            # Validate that Claude returned meaningful content
+            if [ -z "$CHANGELOG" ] || [ "$CHANGELOG" = "null" ]; then
+              echo "❌ Claude returned empty changelog, using fallback"
+              CHANGELOG="## What's Changed\n\n- ${{ steps.analyze-changes.outputs.commits_count }} commits with ${{ steps.analyze-changes.outputs.files_changed }} files changed\n- ${{ steps.analyze-changes.outputs.components_changed }} components and ${{ steps.analyze-changes.outputs.pages_changed }} pages updated\n- ${{ steps.analyze-changes.outputs.additions }} additions and ${{ steps.analyze-changes.outputs.deletions }} deletions\n\nSee commit history for detailed changes."
+            else
+              echo "✅ Claude changelog generated successfully"
+            fi
+          fi
+
+          # Save changelog to output
+          {
+            echo "changelog<<EOF"
+            echo -e "$CHANGELOG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
       - name: Create Release Tag
         if: steps.check-tag.outputs.tag_exists == 'false'
         run: |
@@ -53,42 +227,53 @@ jobs:
           tag_name: v${{ steps.get-version.outputs.version }}
           name: Release v${{ steps.get-version.outputs.version }}
           body: |
-            # RoboSystems MCP Client v${{ steps.get-version.outputs.version }}
+            # RoboSystems SDK v${{ steps.get-version.outputs.version }}
 
-            MCP client adapter for connecting AI agents to RoboSystems Financial Knowledge Graph API.
+            ${{ steps.claude-changelog.outputs.changelog }}
 
-            ## Installation
+            ---
 
-            ```bash
-            npm install @robosystems/mcp
-            ```
+            ## 📊 Release Statistics
 
-            ## Usage
+            - **Commits:** ${{ steps.analyze-changes.outputs.commits_count }}
+            - **Files Changed:** ${{ steps.analyze-changes.outputs.files_changed }}
+            - **Components Updated:** ${{ steps.analyze-changes.outputs.components_changed }}
+            - **Pages Updated:** ${{ steps.analyze-changes.outputs.pages_changed }}
+            - **Styles Updated:** ${{ steps.analyze-changes.outputs.styles_changed }}
+            - **Lines Added:** ${{ steps.analyze-changes.outputs.additions }}
+            - **Lines Deleted:** ${{ steps.analyze-changes.outputs.deletions }}
+            - **Previous Release:** ${{ steps.analyze-changes.outputs.last_tag }}
 
-            Add to your MCP settings:
+            ## 🔗 Links
 
-            ```json
-            {
-              "mcpServers": {
-                "robosystems": {
-                  "command": "npx",
-                  "args": ["-y", "@robosystems/mcp"],
-                  "env": {
-                    "ROBOSYSTEMS_API_KEY": "your-api-key",
-                    "ROBOSYSTEMS_GRAPH_ID": "your-graph-id"
-                  }
-                }
-              }
-            }
-            ```
+            - **Live App:** [robosystems.ai](https://robosystems.ai)
+            - **Full Changelog:** [${{ steps.analyze-changes.outputs.last_tag }}...v${{ steps.get-version.outputs.version }}](https://github.com/RoboFinSystems/robosystems-mcp-client/compare/${{ steps.analyze-changes.outputs.last_tag }}...v${{ steps.get-version.outputs.version }})
+            - **All Releases:** [View all releases](https://github.com/RoboFinSystems/robosystems-mcp-client/releases)
 
-            ## Links
-
-            - [npm Package](https://www.npmjs.com/package/@robosystems/mcp)
-            - [Documentation](https://github.com/RoboFinSystems/robosystems-mcp-client#readme)
-            - [GitHub Repository](https://github.com/RoboFinSystems/robosystems-mcp-client)
-            - [API Documentation](https://api.robosystems.ai)
+            ---
+            🤖 Generated with [Claude Code](https://claude.ai/code)
           draft: false
           prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_TOKEN }}
+
+      - name: Create release summary
+        if: steps.check-tag.outputs.tag_exists == 'false'
+        run: |
+          VERSION="${{ steps.get-version.outputs.version }}"
+
+          echo "## 🚀 RoboSystems v$VERSION Released" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release URL:** [v$VERSION](https://github.com/RoboFinSystems/robosystems-mcp-client/releases/tag/v$VERSION)" >> $GITHUB_STEP_SUMMARY
+          echo "**Live App:** [robosystems.ai](https://robosystems.ai)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Frontend Statistics" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commits:** ${{ steps.analyze-changes.outputs.commits_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Files Changed:** ${{ steps.analyze-changes.outputs.files_changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Components Updated:** ${{ steps.analyze-changes.outputs.components_changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Pages Updated:** ${{ steps.analyze-changes.outputs.pages_changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Styles Updated:** ${{ steps.analyze-changes.outputs.styles_changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Previous Release:** ${{ steps.analyze-changes.outputs.last_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🤖 Claude-Generated Changelog" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.claude-changelog.outputs.changelog }}" >> $GITHUB_STEP_SUMMARY

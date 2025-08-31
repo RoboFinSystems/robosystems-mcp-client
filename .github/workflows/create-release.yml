@@ -1,128 +1,117 @@
-name: Create Release
+name: Create Release & Publish
 
 on:
   workflow_dispatch:
     inputs:
       version_type:
-        description: "Type of version bump"
+        description: 'Version type'
         required: true
+        default: 'patch'
         type: choice
         options:
           - major
           - minor
           - patch
-        default: patch
 
 jobs:
   create-release:
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
-          token: ${{ secrets.ACTIONS_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
           fetch-depth: 0
-
+          token: ${{ secrets.ACTIONS_TOKEN }}
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
-
-      - name: Set up Git
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
+          node-version: '22'
+          cache: 'npm'
+      
       - name: Get current version
         id: current-version
         run: |
           CURRENT_VERSION=$(node -p "require('./package.json').version")
-          if [ -z "$CURRENT_VERSION" ]; then
-            echo "Could not find version in package.json"
-            exit 1
-          fi
           echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-          echo "Current version: $CURRENT_VERSION"
-
+      
       - name: Calculate new version
         id: new-version
         run: |
           CURRENT_VERSION="${{ steps.current-version.outputs.current_version }}"
           VERSION_TYPE="${{ inputs.version_type }}"
-
-          # Split version into major, minor, and patch
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
-
-          # Increment appropriate version component
-          if [ "$VERSION_TYPE" = "major" ]; then
-            MAJOR=$((MAJOR + 1))
-            MINOR=0
-            PATCH=0
-          elif [ "$VERSION_TYPE" = "minor" ]; then
-            MINOR=$((MINOR + 1))
-            PATCH=0
-          else # patch
-            PATCH=$((PATCH + 1))
-          fi
-
-          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
-          BRANCH_NAME="release/$NEW_VERSION"
-
+          
+          IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+          
+          case "$VERSION_TYPE" in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch)
+              patch=$((patch + 1))
+              ;;
+          esac
+          
+          NEW_VERSION="${major}.${minor}.${patch}"
+          BRANCH_NAME="release/${NEW_VERSION}"
+          
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
-          echo "New version: $NEW_VERSION"
-          echo "Branch name: $BRANCH_NAME"
-
-      - name: Check if branch already exists
-        id: check-branch
+      
+      - name: Configure Git
         run: |
-          BRANCH_NAME="${{ steps.new-version.outputs.branch_name }}"
-
-          # Check if branch exists locally or remotely
-          if git show-ref --verify --quiet refs/heads/$BRANCH_NAME || git show-ref --verify --quiet refs/remotes/origin/$BRANCH_NAME; then
-            echo "Branch $BRANCH_NAME already exists"
-            echo "branch_exists=true" >> $GITHUB_OUTPUT
-            exit 1
-          else
-            echo "Branch $BRANCH_NAME does not exist, proceeding..."
-            echo "branch_exists=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Create release branch and update version
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Update main branch version
         run: |
           CURRENT_VERSION="${{ steps.current-version.outputs.current_version }}"
           NEW_VERSION="${{ steps.new-version.outputs.new_version }}"
-          BRANCH_NAME="${{ steps.new-version.outputs.branch_name }}"
-
-          echo "Creating new branch: $BRANCH_NAME"
-          git checkout -b "$BRANCH_NAME"
-
-          # Update version using npm
+          
+          echo "Updating main branch version from $CURRENT_VERSION to $NEW_VERSION"
+          
+          # Update version in package.json
           npm version "$NEW_VERSION" --no-git-tag-version
-
-          # Commit the changes
+          
+          # Install dependencies to update lock file
+          npm install
+          
+          # Commit and push to main
           git add package.json package-lock.json
           git commit -m "Bump version from $CURRENT_VERSION to $NEW_VERSION"
-
-          # Push the branch
+          git push origin main
+      
+      - name: Create release branch
+        run: |
+          BRANCH_NAME="${{ steps.new-version.outputs.branch_name }}"
+          
+          echo "Creating release branch: $BRANCH_NAME"
+          
+          # Create new branch from updated main
+          git checkout -b "$BRANCH_NAME"
+          
+          # Push the release branch
           git push origin "$BRANCH_NAME"
-
-          echo "✅ Version bumped: $CURRENT_VERSION → $NEW_VERSION"
-          echo "✅ Branch created: $BRANCH_NAME" 
-          echo "✅ Changes committed and pushed successfully"
-
+          
+          echo "✅ Release branch created: $BRANCH_NAME"
+      
       - name: Create summary
         run: |
-          echo "## 🚀 Release Branch Created" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 SDK Release Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ steps.current-version.outputs.current_version }} → ${{ steps.new-version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** \`${{ steps.new-version.outputs.branch_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Type:** ${{ inputs.version_type }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "1. Review the changes in the release branch" >> $GITHUB_STEP_SUMMARY
-          echo "2. Create a pull request to merge into main" >> $GITHUB_STEP_SUMMARY
-          echo "3. After merge, the tag-release workflow will create a GitHub release" >> $GITHUB_STEP_SUMMARY
-          echo "4. Use the publish workflow to publish to npm" >> $GITHUB_STEP_SUMMARY
+          echo "The npm package will be automatically published when the release branch is pushed." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Monitor the publish workflow: [View Workflows](https://github.com/RoboFinSystems/robosystems-mcp-client/actions/workflows/publish.yml)" >> $GITHUB_STEP_SUMMARY

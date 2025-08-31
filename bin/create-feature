@@ -1,0 +1,91 @@
+#!/bin/bash
+set -e
+
+# Create feature branch script using GitHub Actions
+# Creates a new feature/bugfix/hotfix branch from specified base
+# Usage: ./bin/create-feature [feature|bugfix|hotfix|chore|refactor] [branch-name] [base-branch]
+
+# Default values
+BRANCH_TYPE=${1:-feature}
+BRANCH_NAME=${2:-}
+BASE_BRANCH=${3:-main}
+
+# Validate branch type
+if [[ "$BRANCH_TYPE" != "feature" && "$BRANCH_TYPE" != "bugfix" && "$BRANCH_TYPE" != "hotfix" && "$BRANCH_TYPE" != "chore" && "$BRANCH_TYPE" != "refactor" ]]; then
+  echo "❌ Invalid branch type: $BRANCH_TYPE"
+  echo "Usage: $0 [feature|bugfix|hotfix|chore|refactor] [branch-name] [base-branch]"
+  exit 1
+fi
+
+# Check if branch name is provided
+if [ -z "$BRANCH_NAME" ]; then
+  echo "❌ Branch name is required"
+  echo "Usage: $0 [feature|bugfix|hotfix|chore|refactor] [branch-name] [base-branch]"
+  exit 1
+fi
+
+# Sanitize branch name
+SANITIZED_NAME=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | tr '[:upper:]' '[:lower:]')
+FULL_BRANCH_NAME="$BRANCH_TYPE/$SANITIZED_NAME"
+
+echo "🌿 Creating feature branch..."
+echo "📋 Branch Details:"
+echo "  Type: $BRANCH_TYPE"
+echo "  Name: $SANITIZED_NAME"
+echo "  Full Name: $FULL_BRANCH_NAME"
+echo "  Base Branch: $BASE_BRANCH"
+echo ""
+
+# Check for uncommitted changes
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "⚠️  You have uncommitted changes. Please commit or stash them first."
+  echo ""
+  echo "Uncommitted files:"
+  git status --porcelain
+  exit 1
+fi
+
+echo "🚀 Triggering GitHub Actions workflow..."
+gh workflow run create-feature.yml \
+  --field branch_type="$BRANCH_TYPE" \
+  --field branch_name="$BRANCH_NAME" \
+  --field base_branch="$BASE_BRANCH"
+
+echo "⏳ Waiting for branch to be created..."
+
+# Wait for the branch to be created (check every 5 seconds for up to 1 minute)
+MAX_ATTEMPTS=12
+ATTEMPT=1
+
+while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+    echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Checking if branch exists..."
+    
+    # Fetch latest changes from remote
+    git fetch origin --quiet
+    
+    # Check if the branch exists on remote
+    if git show-ref --verify --quiet refs/remotes/origin/$FULL_BRANCH_NAME; then
+        echo "✅ Branch $FULL_BRANCH_NAME found! Checking it out..."
+        git checkout -b $FULL_BRANCH_NAME origin/$FULL_BRANCH_NAME 2>/dev/null || git checkout $FULL_BRANCH_NAME
+        
+        echo "🎉 Successfully created and switched to $FULL_BRANCH_NAME"
+        echo ""
+        echo "📝 Next steps:"
+        echo "  1. Make your changes and commit them"
+        echo "  2. Push your changes: git push"
+        echo "  3. Create a PR when ready: npm run pr:create"
+        
+        exit 0
+    fi
+    
+    if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+        echo "❌ Timeout: Branch $FULL_BRANCH_NAME was not created after 1 minute"
+        echo "Check the GitHub Actions workflow status:"
+        echo "  gh run list --workflow=create-feature.yml"
+        exit 1
+    fi
+    
+    echo "Branch not yet available, waiting 5 seconds..."
+    sleep 5
+    ATTEMPT=$((ATTEMPT + 1))
+done
