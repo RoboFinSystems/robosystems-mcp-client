@@ -26,9 +26,9 @@
       "problemMatcher": []
     },
     {
-      "label": "Deploy",
+      "label": "Publish to npm",
       "type": "shell",
-      "command": "npm run deploy:${input:environment}",
+      "command": "npm publish",
       "problemMatcher": []
     },
     {
@@ -40,7 +40,7 @@
     {
       "label": "Create Release",
       "type": "shell",
-      "command": "npm run release:create ${input:versionType} ${input:deployTarget}",
+      "command": "npm run release:create ${input:versionType}",
       "problemMatcher": []
     },
     {
@@ -114,13 +114,6 @@
       "options": ["major", "minor", "patch"]
     },
     {
-      "id": "deployTarget",
-      "type": "pickString",
-      "description": "Choose initial deployment target:",
-      "default": "staging",
-      "options": ["staging", "prod", "none"]
-    },
-    {
       "id": "branchType",
       "type": "pickString",
       "description": "Choose branch type:",
@@ -158,13 +151,6 @@
       "description": "Choose model:",
       "default": "opus",
       "options": ["opus", "sonnet"]
-    },
-    {
-      "id": "environment",
-      "type": "pickString",
-      "description": "Choose environment:",
-      "default": "staging",
-      "options": ["staging", "prod"]
     }
   ]
 }
