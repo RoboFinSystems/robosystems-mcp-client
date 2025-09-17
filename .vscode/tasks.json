@@ -50,18 +50,6 @@
       "problemMatcher": []
     },
     {
-      "label": "Core Pull",
-      "type": "shell",
-      "command": "npm run core:pull",
-      "problemMatcher": []
-    },
-    {
-      "label": "Core Push",
-      "type": "shell",
-      "command": "npm run core:push",
-      "problemMatcher": []
-    },
-    {
       "label": "Test All",
       "type": "shell",
       "command": "npm run test:all",
