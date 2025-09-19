@@ -84,7 +84,6 @@ echo "🚀 Triggering Claude analysis workflow..."
 gh workflow run create-pr.yml \
   --field source_branch="$CURRENT_BRANCH" \
   --field target_branch="$TARGET_BRANCH" \
-  --field pr_type="$PR_TYPE" \
   --field claude_review="$CLAUDE_REVIEW"
 
 echo "⏳ Waiting for Claude to analyze changes and create PR..."
