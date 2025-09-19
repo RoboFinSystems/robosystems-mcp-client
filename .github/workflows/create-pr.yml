@@ -314,13 +314,16 @@ jobs:
 
       - name: Create Pull Request
         id: create-pr
+        env:
+          CLAUDE_PR_TITLE: ${{ steps.claude.outputs.pr_title }}
+          CLAUDE_PR_DESCRIPTION: ${{ steps.claude.outputs.pr_description }}
         run: |
           SOURCE_BRANCH="${{ steps.source-branch.outputs.source_branch }}"
           TARGET_BRANCH="${{ inputs.target_branch }}"
-          PR_TITLE="${{ steps.claude.outputs.pr_title }}"
 
-          # Create PR description with proper escaping to avoid command substitution
-          PR_DESCRIPTION="${{ steps.claude.outputs.pr_description }}"
+          # Use environment variables to safely handle Claude's output
+          PR_TITLE="$CLAUDE_PR_TITLE"
+          PR_DESCRIPTION="$CLAUDE_PR_DESCRIPTION"
 
           # Append footer to description
           PR_FOOTER="
