@@ -3,12 +3,11 @@ set -e
 
 # Create PR script using GitHub Actions
 # Analyzes current branch changes and creates a comprehensive PR with Claude
-# Usage: ./bin/create-pr [target_branch] [pr_type] [claude_review]
+# Usage: ./bin/create-pr [target_branch] [claude_review]
 
 # Default values
 TARGET_BRANCH=${1:-main}
-PR_TYPE=${2:-release}
-CLAUDE_REVIEW=${3:-true}
+CLAUDE_REVIEW=${2:-true}
 
 # Get current branch
 CURRENT_BRANCH=$(git branch --show-current)
@@ -26,10 +25,23 @@ if [[ "$TARGET_BRANCH" != "main" && "$TARGET_BRANCH" != "staging" ]]; then
   exit 1
 fi
 
-# Validate PR type
-if [[ "$PR_TYPE" != "release" && "$PR_TYPE" != "feature" && "$PR_TYPE" != "bugfix" && "$PR_TYPE" != "hotfix" ]]; then
-  echo "❌ Invalid PR type: $PR_TYPE. Use 'release', 'feature', 'bugfix', or 'hotfix'."
-  exit 1
+# Determine PR type from branch prefix
+if [[ "$CURRENT_BRANCH" == release/* ]]; then
+  PR_TYPE="release"
+elif [[ "$CURRENT_BRANCH" == feature/* ]]; then
+  PR_TYPE="feature"
+elif [[ "$CURRENT_BRANCH" == bugfix/* ]]; then
+  PR_TYPE="bugfix"
+elif [[ "$CURRENT_BRANCH" == hotfix/* ]]; then
+  PR_TYPE="hotfix"
+elif [[ "$CURRENT_BRANCH" == chore/* ]]; then
+  PR_TYPE="chore"
+elif [[ "$CURRENT_BRANCH" == refactor/* ]]; then
+  PR_TYPE="refactor"
+else
+  # Default to feature for any other branch names
+  PR_TYPE="feature"
+  echo "⚠️  Could not determine PR type from branch name '$CURRENT_BRANCH', defaulting to 'feature'"
 fi
 
 # Validate Claude review parameter
