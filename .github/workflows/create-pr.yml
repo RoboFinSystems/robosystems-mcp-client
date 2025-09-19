@@ -316,9 +316,11 @@ jobs:
           TARGET_BRANCH="${{ inputs.target_branch }}"
           PR_TITLE="${{ steps.claude.outputs.pr_title }}"
 
-          # Create PR description with Claude analysis + footer
-          cat > /tmp/pr_description.txt << EOF
-          ${{ steps.claude.outputs.pr_description }}
+          # Create PR description with proper escaping to avoid command substitution
+          PR_DESCRIPTION="${{ steps.claude.outputs.pr_description }}"
+
+          # Append footer to description
+          PR_FOOTER="
 
           ---
           🤖 Generated with [Claude Code](https://claude.ai/code)
@@ -328,20 +330,28 @@ jobs:
           - Target: \`$TARGET_BRANCH\`
           - Type: ${{ steps.pr-type.outputs.pr_type }}
 
-          Co-Authored-By: Claude <noreply@anthropic.com>
-          EOF
+          Co-Authored-By: Claude <noreply@anthropic.com>"
 
-          PR_DESCRIPTION=$(cat /tmp/pr_description.txt)
+          PR_DESCRIPTION="${PR_DESCRIPTION}${PR_FOOTER}"
 
-          # Create the PR
-          PR_URL=$(gh pr create \
-            --title "$PR_TITLE" \
-            --body "$PR_DESCRIPTION" \
-            --base "$TARGET_BRANCH" \
-            --head "$SOURCE_BRANCH")
+          # Check if PR already exists
+          EXISTING_PR=$(gh pr list --head "$SOURCE_BRANCH" --base "$TARGET_BRANCH" --json url --jq '.[0].url' 2>/dev/null || echo "")
 
-          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
-          echo "✅ Pull Request created: $PR_URL"
+          if [ -n "$EXISTING_PR" ] && [ "$EXISTING_PR" != "null" ]; then
+            echo "✅ PR already exists: $EXISTING_PR"
+            echo "pr_url=$EXISTING_PR" >> $GITHUB_OUTPUT
+            PR_URL="$EXISTING_PR"
+          else
+            # Create the PR
+            PR_URL=$(gh pr create \
+              --title "$PR_TITLE" \
+              --body "$PR_DESCRIPTION" \
+              --base "$TARGET_BRANCH" \
+              --head "$SOURCE_BRANCH")
+
+            echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+            echo "✅ Pull Request created: $PR_URL"
+          fi
 
       - name: Request Claude review
         if: ${{ inputs.claude_review }}
