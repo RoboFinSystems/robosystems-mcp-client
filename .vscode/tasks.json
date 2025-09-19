@@ -32,7 +32,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Create Feature Branch",
+      "label": "Create Feature",
       "type": "shell",
       "command": "npm run feature:create ${input:branchType} ${input:branchName} ${input:baseBranch}",
       "problemMatcher": []
