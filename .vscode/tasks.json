@@ -46,7 +46,7 @@
     {
       "label": "Create PR",
       "type": "shell",
-      "command": "npm run pr:create ${input:targetBranch} ${input:prType} ${input:claudeReview}",
+      "command": "npm run pr:create ${input:targetBranch} ${input:claudeReview}",
       "problemMatcher": []
     },
     {
@@ -125,13 +125,6 @@
       "type": "promptString",
       "description": "Choose target branch:",
       "default": "main"
-    },
-    {
-      "id": "prType",
-      "type": "pickString",
-      "description": "Choose PR type:",
-      "default": "feature",
-      "options": ["release", "feature", "bugfix", "hotfix"]
     },
     {
       "id": "claudeReview",
