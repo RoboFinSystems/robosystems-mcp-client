@@ -2,12 +2,6 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "robosystems-mcp-client Dev",
-      "type": "shell",
-      "command": "npm run dev -- --port ${input:port}",
-      "problemMatcher": []
-    },
-    {
       "label": "Install Dependencies",
       "type": "shell",
       "command": "npm install",
@@ -20,45 +14,15 @@
       "problemMatcher": []
     },
     {
-      "label": "Claude Code",
+      "label": "Test",
       "type": "shell",
-      "command": "claude --model ${input:claudeModel}",
-      "problemMatcher": []
-    },
-    {
-      "label": "Publish to npm",
-      "type": "shell",
-      "command": "npm publish",
-      "problemMatcher": []
-    },
-    {
-      "label": "Create Feature",
-      "type": "shell",
-      "command": "npm run feature:create ${input:branchType} ${input:branchName} ${input:baseBranch}",
-      "problemMatcher": []
-    },
-    {
-      "label": "Create Release",
-      "type": "shell",
-      "command": "npm run release:create ${input:versionType}",
-      "problemMatcher": []
-    },
-    {
-      "label": "Create PR",
-      "type": "shell",
-      "command": "npm run pr:create ${input:targetBranch} ${input:claudeReview}",
+      "command": "npm run test",
       "problemMatcher": []
     },
     {
       "label": "Test All",
       "type": "shell",
       "command": "npm run test:all",
-      "problemMatcher": []
-    },
-    {
-      "label": "Test",
-      "type": "shell",
-      "command": "npm run test",
       "problemMatcher": []
     },
     {
@@ -84,16 +48,27 @@
       "type": "shell",
       "command": "npm run typecheck",
       "problemMatcher": []
-    }
+    },
+    {
+      "label": "Create Feature",
+      "type": "shell",
+      "command": "npm run feature:create ${input:branchType} ${input:branchName} ${input:baseBranch}",
+      "problemMatcher": []
+    },
+    {
+      "label": "Create PR",
+      "type": "shell",
+      "command": "npm run pr:create ${input:targetBranch} ${input:claudeReview}",
+      "problemMatcher": []
+    },
+    {
+      "label": "Create Release",
+      "type": "shell",
+      "command": "npm run release:create ${input:versionType}",
+      "problemMatcher": []
+    },
   ],
   "inputs": [
-    {
-      "id": "port",
-      "type": "pickString",
-      "description": "Select which port to run on:",
-      "options": ["3000", "3001", "3002"],
-      "default": "3000"
-    },
     {
       "id": "versionType",
       "type": "pickString",
@@ -133,12 +108,5 @@
       "default": "true",
       "options": ["true", "false"]
     },
-    {
-      "id": "claudeModel",
-      "type": "pickString",
-      "description": "Choose model:",
-      "default": "opus",
-      "options": ["opus", "sonnet"]
-    }
   ]
 }
