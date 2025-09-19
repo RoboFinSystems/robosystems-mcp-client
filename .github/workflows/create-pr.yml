@@ -112,15 +112,18 @@ jobs:
           COMMIT_RANGE="origin/$TARGET_BRANCH...$SOURCE_BRANCH"
 
           # Get diff stats (limit output to prevent memory issues)
-          DIFF_STATS=$(git diff --stat --no-color $COMMIT_RANGE | head -50)  # Limit to 50 lines
+          # Remove backticks to prevent command substitution when used in heredocs
+          DIFF_STATS=$(git diff --stat --no-color $COMMIT_RANGE | head -50 | sed 's/`//g')  # Limit to 50 lines
           FILES_CHANGED=$(git diff --name-only $COMMIT_RANGE | wc -l)
           COMMITS_COUNT=$(git rev-list --count $COMMIT_RANGE)
 
           # Get commit messages (limit to recent commits)
-          COMMIT_MESSAGES=$(git log --oneline --no-color $COMMIT_RANGE | head -20)  # Limit to 20 commits
+          # Remove backticks to prevent command substitution when used in heredocs
+          COMMIT_MESSAGES=$(git log --oneline --no-color $COMMIT_RANGE | head -20 | sed 's/`//g')  # Limit to 20 commits
 
           # Get detailed changes (limit to prevent memory issues)
-          DETAILED_CHANGES=$(git diff $COMMIT_RANGE --name-status --no-color | head -100)  # Limit to 100 files
+          # Remove backticks to prevent command substitution when used in heredocs
+          DETAILED_CHANGES=$(git diff $COMMIT_RANGE --name-status --no-color | head -100 | sed 's/`//g')  # Limit to 100 files
 
           # Create analysis prompt for Claude
           cat << 'EOF' > /tmp/pr_analysis_prompt.txt
