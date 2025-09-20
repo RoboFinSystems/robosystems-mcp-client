@@ -173,7 +173,7 @@ For support:
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-MIT © 2025 Harbinger FinLab
+MIT © 2025 RFS LLC
 
 ## Related Projects
 
