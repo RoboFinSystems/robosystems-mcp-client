@@ -1,21 +1,21 @@
-name: Claude Create PR
+name: Create Claude PR
 
 on:
   workflow_dispatch:
     inputs:
       source_branch:
-        description: 'Source branch to create PR from (defaults to current branch)'
+        description: "Source branch to create PR from (defaults to current branch)"
         required: false
         type: string
       target_branch:
-        description: 'Target branch to merge into'
+        description: "Target branch to merge into"
         required: true
         type: choice
         options:
           - main
         default: main
       claude_review:
-        description: 'Request Claude review automatically'
+        description: "Request Claude review automatically"
         required: false
         type: boolean
         default: true
