@@ -39,16 +39,9 @@ echo ""
 
 # Check for uncommitted changes
 if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "⚠️  You have uncommitted changes."
-  read -p "Do you want to stash them? (y/N): " -n 1 -r
-  echo
-  if [[ $REPLY =~ ^[Yy]$ ]]; then
-    git stash push -m "Auto-stash before creating branch $FULL_BRANCH"
-    echo "✅ Changes stashed"
-  else
-    echo "❌ Please commit or stash your changes first"
-    exit 1
-  fi
+  echo "⚠️  You have uncommitted changes. Auto-stashing..."
+  git stash push -m "Auto-stash before creating branch $FULL_BRANCH"
+  echo "✅ Changes stashed"
 fi
 
 # Fetch latest changes from remote
@@ -92,13 +85,10 @@ echo "  2. Push your changes: git push"
 echo "  3. Create a PR: gh pr create --base $BASE_BRANCH --title \"Your PR title\" --body \"Your PR description\""
 echo "     or use: npm run pr:create"
 
-# Check if we had stashed changes
+# Check if we had stashed changes and auto-apply them
 if git stash list | grep -q "Auto-stash before creating branch $FULL_BRANCH"; then
   echo ""
-  read -p "Do you want to apply your stashed changes? (y/N): " -n 1 -r
-  echo
-  if [[ $REPLY =~ ^[Yy]$ ]]; then
-    git stash pop
-    echo "✅ Stashed changes applied"
-  fi
+  echo "Auto-applying stashed changes..."
+  git stash pop
+  echo "✅ Stashed changes applied"
 fi
