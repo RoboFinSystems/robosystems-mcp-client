@@ -28,7 +28,7 @@
     "api",
     "model-context-protocol"
   ],
-  "author": "Harbinger FinLab",
+  "author": "RFS LLC",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.1",

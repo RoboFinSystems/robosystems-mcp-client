@@ -16,6 +16,9 @@ on:
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.new-version.outputs.new_version }}
+      branch_name: ${{ steps.new-version.outputs.branch_name }}
 
     steps:
       - name: Checkout code
@@ -103,15 +106,32 @@ jobs:
 
           echo "✅ Release branch created: $BRANCH_NAME"
 
+  create-tag:
+    needs: create-release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/tag-release.yml
+    with:
+      branch_ref: ${{ needs.create-release.outputs.branch_name }}
+    secrets: inherit
+
+  create-summary:
+    needs: [create-release, create-tag]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
       - name: Create summary
         run: |
           echo "## 🚀 SDK Release Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ steps.current-version.outputs.current_version }} → ${{ steps.new-version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** \`${{ steps.new-version.outputs.branch_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.create-tag.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`${{ needs.create-tag.outputs.tag_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${{ needs.create-release.outputs.branch_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Type:** ${{ inputs.version_type }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release URL:** ${{ needs.create-tag.outputs.release_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "The npm package will be automatically published when the release branch is pushed." >> $GITHUB_STEP_SUMMARY
+          echo "The npm package will be automatically published when the release tag is created." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Monitor the publish workflow: [View Workflows](https://github.com/RoboFinSystems/robosystems-mcp-client/actions/workflows/publish.yml)" >> $GITHUB_STEP_SUMMARY
