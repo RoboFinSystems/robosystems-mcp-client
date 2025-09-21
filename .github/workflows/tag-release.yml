@@ -1,16 +1,38 @@
 name: Claude Tag Release
 
 on:
-  push:
-    branches:
-      - 'release/**'
+  workflow_call:
+    inputs:
+      branch_ref:
+        description: 'The branch ref to tag'
+        required: true
+        type: string
+    outputs:
+      tag_name:
+        description: 'The created tag name'
+        value: ${{ jobs.action.outputs.tag_name }}
+      version:
+        description: 'The version number'
+        value: ${{ jobs.action.outputs.version }}
+      release_url:
+        description: 'The GitHub release URL'
+        value: ${{ jobs.action.outputs.release_url }}
+    secrets:
+      ACTIONS_TOKEN:
+        required: true
+      ANTHROPIC_API_KEY:
+        required: true
 
 jobs:
   action:
     runs-on: ubuntu-latest # Use GitHub-hosted runners for memory-intensive git/Claude operations
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: write
+    outputs:
+      tag_name: ${{ steps.get-version.outputs.tag_name }}
+      version: ${{ steps.get-version.outputs.version }}
+      release_url: ${{ steps.create-release.outputs.upload_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,6 +47,7 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=v$VERSION" >> $GITHUB_OUTPUT
           echo "Found version: $VERSION"
 
       - name: Check If Tag Exists
@@ -181,7 +204,7 @@ jobs:
               ]
             }')
 
-          RESPONSE=$(curl -s -X POST "https://api.anthropic.com/v1/messages" \
+          RESPONSE=$(curl -s --max-time 60 --retry 3 --retry-delay 10 -X POST "https://api.anthropic.com/v1/messages" \
             -H "Content-Type: application/json" \
             -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
             -H "anthropic-version: 2023-06-01" \
@@ -222,6 +245,7 @@ jobs:
 
       - name: Create GitHub Release
         if: steps.check-tag.outputs.tag_exists == 'false'
+        id: create-release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.get-version.outputs.version }}
