@@ -1,6 +1,6 @@
 {
   "name": "@robosystems/mcp",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "MCP client adapter for connecting AI agents to RoboSystems Financial Knowledge Graph API endpoints",
   "type": "module",
   "main": "index.js",
