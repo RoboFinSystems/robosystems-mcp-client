@@ -14,42 +14,6 @@
       "problemMatcher": []
     },
     {
-      "label": "Test",
-      "type": "shell",
-      "command": "npm run test",
-      "problemMatcher": []
-    },
-    {
-      "label": "Test All",
-      "type": "shell",
-      "command": "npm run test:all",
-      "problemMatcher": []
-    },
-    {
-      "label": "Lint",
-      "type": "shell",
-      "command": "npm run lint",
-      "problemMatcher": []
-    },
-    {
-      "label": "Lint Fix",
-      "type": "shell",
-      "command": "npm run lint:fix",
-      "problemMatcher": []
-    },
-    {
-      "label": "Format",
-      "type": "shell",
-      "command": "npm run format",
-      "problemMatcher": []
-    },
-    {
-      "label": "Type Check",
-      "type": "shell",
-      "command": "npm run typecheck",
-      "problemMatcher": []
-    },
-    {
       "label": "Create Feature",
       "type": "shell",
       "command": "npm run feature:create ${input:branchType} ${input:branchName} ${input:baseBranch}",
@@ -66,7 +30,7 @@
       "type": "shell",
       "command": "npm run release:create ${input:versionType}",
       "problemMatcher": []
-    },
+    }
   ],
   "inputs": [
     {
@@ -107,6 +71,6 @@
       "description": "Request Claude review automatically:",
       "default": "true",
       "options": ["true", "false"]
-    },
+    }
   ]
 }

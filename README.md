@@ -1,6 +1,18 @@
 # RoboSystems MCP Client
 
-MCP (Model Context Protocol) client adapter for connecting AI agents to RoboSystems Financial Knowledge Graph API endpoints.
+[![npm version](https://badge.fury.io/js/@robosystems%2Fmcp.svg)](https://www.npmjs.com/package/@robosystems/mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Official MCP (Model Context Protocol) client adapter for connecting AI agents to RoboSystems Financial Knowledge Graph API. Access comprehensive financial data including accounting transactions, financial reports, and advanced graph analytics through the Model Context Protocol.
+
+## Features
+
+- **MCP-compliant server** for Claude Desktop and other AI agents
+- **Streaming support** for memory-efficient processing of large result sets
+- **Connection pooling** for optimal SSE performance
+- **Smart caching** for frequently accessed schemas and metadata
+- **Automatic retry logic** with exponential backoff
+- **Real-time progress tracking** for long-running operations
 
 ## Installation
 
@@ -78,20 +90,14 @@ Cache TTL values per tool type:
 - **`describe-graph-structure`**: Get natural language description of the graph
   - AI-friendly format for better understanding
 
-## Features
+## Technical Details
 
-### Multiple Response Formats
-The MCP server automatically handles:
+### Response Formats
+The MCP server automatically handles multiple response formats:
 - **JSON**: Standard synchronous responses
 - **SSE (Server-Sent Events)**: Real-time streaming for long operations
 - **NDJSON**: Newline-delimited JSON for batch processing
 - **Queued**: Queued operations with status polling
-
-### Performance Optimizations
-- **Connection Pooling**: Reuses SSE connections for better performance
-- **Smart Caching**: Frequently accessed data (like schemas) cached automatically
-- **Retry Logic**: Automatic retry with exponential backoff for network issues
-- **Progress Tracking**: Real-time updates for long-running operations
 
 ## Integration Examples
 
@@ -138,44 +144,15 @@ Once configured, you can ask Claude to:
 - **Explore relationships**: "How are companies connected to their financial reports?"
 - **Run complex analyses**: "Find companies with revenue growth over 20% in the last year"
 
-## Troubleshooting
+## Support
 
-### Common Issues
-
-**Connection Errors**
-- Verify your API key is correct and has proper permissions
-- Check that the API URL is reachable
-- Ensure your graph ID exists
-
-**Slow Responses**
-- Large queries may take time to complete
-- Progress updates will show in the logs
-- Consider breaking complex queries into smaller parts
-
-**Cache Issues**
-- Schema data is cached for better performance
-- Restart the MCP server to clear caches if needed
-
-### Getting Help
-
-For support:
-- **API Reference**: [https://api.robosystems.ai](https://api.robosystems.ai)
-- **Issues**: [GitHub Issues](https://github.com/RoboFinSystems/robosystems-mcp-client/issues)
-
-## Security
-
-- API keys are transmitted securely via headers
-- All queries are read-only by default
-- No sensitive data is cached locally
-- Connections are automatically cleaned up
+- Issues: [Issues](https://github.com/RoboFinSystems/robosystems-mcp-client/issues)
+- Discussions: [Discussions](https://github.com/RoboFinSystems/robosystems-mcp-client/discussions)
+- Projects: [Projects](https://github.com/RoboFinSystems/robosystems-mcp-client/projects)
+- Wiki: [Wiki](https://github.com/RoboFinSystems/robosystems-mcp-client/wiki)
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 MIT © 2025 RFS LLC
-
-## Related Projects
-
-- [@robosystems/client](https://www.npmjs.com/package/@robosystems/client) - JavaScript/TypeScript Client
-- [robosystems-python-client](https://pypi.org/project/robosystems-client/) - Python Client
