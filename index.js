@@ -624,13 +624,19 @@ class RoboSystemsMCPClient {
 }
 
 async function main() {
-  const baseUrl = process.env.ROBOSYSTEMS_API_URL || 'http://localhost:8000'
+  const baseUrl = process.env.ROBOSYSTEMS_API_URL || 'https://api.robosystems.ai'
   const apiKey = process.env.ROBOSYSTEMS_API_KEY
-  const graphId = process.env.ROBOSYSTEMS_GRAPH_ID || 'default'
+  const graphId = process.env.ROBOSYSTEMS_GRAPH_ID
 
   if (!apiKey) {
     console.error('ROBOSYSTEMS_API_KEY environment variable is required')
     console.error('Please set ROBOSYSTEMS_API_KEY in your MCP configuration')
+    process.exit(1)
+  }
+
+  if (!graphId) {
+    console.error('ROBOSYSTEMS_GRAPH_ID environment variable is required')
+    console.error('Please set ROBOSYSTEMS_GRAPH_ID in your MCP configuration')
     process.exit(1)
   }
 

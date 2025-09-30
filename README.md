@@ -14,18 +14,6 @@ Official MCP (Model Context Protocol) client adapter for connecting AI agents to
 - **Automatic retry logic** with exponential backoff
 - **Real-time progress tracking** for long-running operations
 
-## Installation
-
-```bash
-npm install @robosystems/mcp
-```
-
-Or run directly with npx:
-
-```bash
-npx @robosystems/mcp
-```
-
 ## Quick Start
 
 Add to your MCP servers configuration:
@@ -48,17 +36,16 @@ Add to your MCP servers configuration:
 
 ## Environment Variables
 
-| Variable | Description | Required | Default | Example |
-|----------|-------------|----------|---------|---------|
-| `ROBOSYSTEMS_API_KEY` | Your API key | Yes | - | `rfs...` |
-| `ROBOSYSTEMS_GRAPH_ID` | The graph database ID to connect to | Yes | - | `kg...` or `sec` |
-| `ROBOSYSTEMS_API_URL` | The RoboSystems API endpoint | No | `http://localhost:8000` | `https://api.robosystems.ai` |
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `ROBOSYSTEMS_API_KEY` | Your API key | `rfs...` |
+| `ROBOSYSTEMS_GRAPH_ID` | The graph database ID to connect to | `kg...` or `sec` |
+| `ROBOSYSTEMS_API_URL` | The RoboSystems API endpoint | `https://api.robosystems.ai` |
 
-## API Reference
+## MCP API Reference
 
-- API reference: [https://api.robosystems.ai](https://api.robosystems.ai)
-- API documentation: [https://api.robosystems.ai/docs](https://api.robosystems.ai/docs)
-- OpenAPI specification: [https://api.robosystems.ai/openapi.json](https://api.robosystems.ai/openapi.json)
+- MCP API documentation: [https://api.robosystems.ai/docs#tag/MCP](https://api.robosystems.ai/docs#tag/MCP)
+- RoboSystems: [https://robosystems.ai](https://robosystems.ai)
 
 ## Support
 
