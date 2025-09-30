@@ -196,9 +196,9 @@ class RoboSystemsMCPClient {
 
   async getTools() {
     try {
-      console.error(`Fetching tools from ${this.baseUrl}/v1/graph/${this.graphId}/mcp/tools`)
+      console.error(`Fetching tools from ${this.baseUrl}/v1/graphs/${this.graphId}/mcp/tools`)
       const response = await fetch(
-        `${this.baseUrl}/v1/graph/${this.graphId}/mcp/tools`,
+        `${this.baseUrl}/v1/graphs/${this.graphId}/mcp/tools`,
         {
           headers: this.headers,
         }
@@ -244,7 +244,7 @@ class RoboSystemsMCPClient {
       }
 
       const response = await fetch(
-        `${this.baseUrl}/v1/graph/${this.graphId}/mcp/call-tool`,
+        `${this.baseUrl}/v1/graphs/${this.graphId}/mcp/call-tool`,
         {
           method: 'POST',
           headers,
@@ -468,9 +468,9 @@ class RoboSystemsMCPClient {
       console.error(`Query queued with ID: ${data.queue_id}`)
       
       const statusUrl = data.status_url ||
-        `${this.baseUrl}/v1/graph/${this.graphId}/query/${data.queue_id}/status`
+        `${this.baseUrl}/v1/graphs/${this.graphId}/query/${data.queue_id}/status`
       const resultUrl = data.result_url ||
-        `${this.baseUrl}/v1/graph/${this.graphId}/query/${data.queue_id}/result`
+        `${this.baseUrl}/v1/graphs/${this.graphId}/query/${data.queue_id}/result`
 
       // Simple polling with exponential backoff
       let attempts = 0
