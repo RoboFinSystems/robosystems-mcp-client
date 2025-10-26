@@ -38,21 +38,21 @@ Add to your MCP servers configuration:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
+| `ROBOSYSTEMS_API_URL` | The RoboSystems API endpoint | `https://api.robosystems.ai` |
 | `ROBOSYSTEMS_API_KEY` | Your API key | `rfs...` |
 | `ROBOSYSTEMS_GRAPH_ID` | The graph database ID to connect to | `kg...` or `sec` |
-| `ROBOSYSTEMS_API_URL` | The RoboSystems API endpoint | `https://api.robosystems.ai` |
 
-## MCP API Reference
+## API Reference
 
-- MCP API documentation: [https://api.robosystems.ai/docs#tag/MCP](https://api.robosystems.ai/docs#tag/MCP)
-- RoboSystems: [https://robosystems.ai](https://robosystems.ai)
+- [RoboSystems](https://robosystems.ai)
+- [MCP API documentation](https://api.robosystems.ai/docs#tag/MCP)
 
 ## Support
 
-- Issues: [Issues](https://github.com/RoboFinSystems/robosystems-mcp-client/issues)
-- Discussions: [Discussions](https://github.com/RoboFinSystems/robosystems-mcp-client/discussions)
-- Projects: [Projects](https://github.com/RoboFinSystems/robosystems-mcp-client/projects)
-- Wiki: [Wiki](https://github.com/RoboFinSystems/robosystems-mcp-client/wiki)
+- [Issues](https://github.com/RoboFinSystems/robosystems-mcp-client/issues)
+- [Discussions](https://github.com/RoboFinSystems/robosystems/discussions)
+- [Projects](https://github.com/RoboFinSystems/robosystems/projects)
+- [Wiki](https://github.com/RoboFinSystems/robosystems/wiki)
 
 ## License
 
