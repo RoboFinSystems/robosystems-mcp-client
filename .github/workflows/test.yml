@@ -10,23 +10,32 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      
+
       - name: Install Dependencies
         run: npm install
-      
+
+      - name: Run Tests
+        run: npm run test
+
+      - name: Validate Package Structure
+        run: |
+          # Check that key files exist
+          test -f index.js || { echo "Missing index.js"; exit 1; }
+          test -f package.json || { echo "Missing package.json"; exit 1; }
+          test -f README.md || { echo "Missing README.md"; exit 1; }
+          echo "✅ Package structure validated"
+
       - name: Check package can be imported
         run: |
-          node -e "const client = require('./index.js'); console.log('✅ Package imported successfully');"
-      
-      - name: Validate package.json
-        run: |
-          node -e "const pkg = require('./package.json'); if (!pkg.name || !pkg.version) { throw new Error('Invalid package.json'); }"
+          # Set env vars to prevent main() from running
+          export VITEST=true
+          node --input-type=module -e "import('./index.js').then(() => console.log('✅ Package imported successfully'))"

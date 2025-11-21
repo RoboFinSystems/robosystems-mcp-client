@@ -140,3 +140,7 @@ dist
 *.njsproj
 *.sln
 *.sw?
+
+#AI
+.claude/
+CLAUDE.local.md

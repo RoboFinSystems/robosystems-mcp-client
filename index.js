@@ -59,17 +59,19 @@ class SSEConnectionPool {
 
     // Create new connection
     const eventSource = new EventSource(url, { headers })
+
+    // Auto-cleanup after TTL - store timer ID to prevent memory leaks
+    const cleanupTimer = setTimeout(() => {
+      this.closeConnection(operationId)
+    }, this.connectionTTL)
+
     this.connections.set(operationId, {
       eventSource,
       createdAt: Date.now(),
       lastUsed: Date.now(),
+      cleanupTimer,
     })
 
-    // Auto-cleanup after TTL
-    setTimeout(() => {
-      this.closeConnection(operationId)
-    }, this.connectionTTL)
-    
     return eventSource
   }
 
@@ -92,6 +94,10 @@ class SSEConnectionPool {
   closeConnection(operationId) {
     const conn = this.connections.get(operationId)
     if (conn) {
+      // Clear the cleanup timer to prevent memory leaks
+      if (conn.cleanupTimer) {
+        clearTimeout(conn.cleanupTimer)
+      }
       conn.eventSource.close()
       this.connections.delete(operationId)
     }
@@ -114,10 +120,11 @@ class ResultCache {
     this.cacheExpiry = new Map()
   }
 
-  generateKey(tool, args) {
+  generateKey(tool, args, workspaceId = null) {
     // Sort object keys to ensure deterministic cache keys
+    // Include workspaceId to prevent cache collisions across workspaces
     const sortedArgs = this._sortObjectKeys(args)
-    const data = JSON.stringify({ tool, args: sortedArgs }, null, 0)
+    const data = JSON.stringify({ tool, args: sortedArgs, workspace: workspaceId }, null, 0)
     return createHash('sha256').update(data).digest('hex')
   }
 
@@ -135,9 +142,9 @@ class ResultCache {
     return sortedObj
   }
 
-  get(tool, args) {
-    const key = this.generateKey(tool, args)
-    
+  get(tool, args, workspaceId = null) {
+    const key = this.generateKey(tool, args, workspaceId)
+
     if (this.cache.has(key)) {
       const expiry = this.cacheExpiry.get(key)
       if (expiry > Date.now()) {
@@ -148,12 +155,12 @@ class ResultCache {
         this.cacheExpiry.delete(key)
       }
     }
-    
+
     return null
   }
 
-  set(tool, args, result, ttlSeconds = 300) {
-    const key = this.generateKey(tool, args)
+  set(tool, args, result, ttlSeconds = 300, workspaceId = null) {
+    const key = this.generateKey(tool, args, workspaceId)
     this.cache.set(key, result)
     this.cacheExpiry.set(key, Date.now() + (ttlSeconds * 1000))
   }
@@ -172,33 +179,45 @@ class RoboSystemsMCPClient {
   constructor(baseUrl, apiKey, graphId) {
     this.baseUrl = baseUrl.replace(/\/$/, '') // Remove trailing slash
     this.apiKey = apiKey
-    this.graphId = graphId
+    this.primaryGraphId = graphId  // Parent graph (never changes)
+    this.activeGraphId = graphId   // Currently active graph (can switch to workspaces)
+    this.graphId = graphId         // Deprecated: kept for backward compatibility
     this.headers = {
       'X-API-Key': apiKey,
       'Content-Type': 'application/json',
       'User-Agent': `robosystems-mcp/${PACKAGE_VERSION}`,
       'X-MCP-Client': PACKAGE_VERSION,
     }
-    
+
     // Initialize components
     this.connectionPool = new SSEConnectionPool()
     this.resultCache = new ResultCache()
     this.maxRetries = 3
     this.baseRetryDelay = 1000
-    
+
+    // Workspace tracking
+    this.workspaces = new Map()
+    this.workspaces.set(graphId, {
+      type: 'primary',
+      name: 'main',
+      created_at: Date.now(),
+      parent_graph_id: null
+    })
+
     // Simple metrics
     this.metrics = {
       totalRequests: 0,
       cacheHits: 0,
       errors: 0,
+      workspaceSwitches: 0,
     }
   }
 
   async getTools() {
     try {
-      console.error(`Fetching tools from ${this.baseUrl}/v1/graphs/${this.graphId}/mcp/tools`)
+      console.error(`Fetching tools from ${this.baseUrl}/v1/graphs/${this.activeGraphId}/mcp/tools`)
       const response = await fetch(
-        `${this.baseUrl}/v1/graphs/${this.graphId}/mcp/tools`,
+        `${this.baseUrl}/v1/graphs/${this.activeGraphId}/mcp/tools`,
         {
           headers: this.headers,
         }
@@ -211,8 +230,20 @@ class RoboSystemsMCPClient {
       }
 
       const data = await response.json()
-      console.error(`Got ${data.tools?.length || 0} tools from API`)
-      return data.tools || []
+      let tools = data.tools || []
+      console.error(`Got ${tools.length} tools from API`)
+
+      // Add client-side workspace tools (if not already provided by server)
+      const workspaceToolNames = ['create-workspace', 'switch-workspace', 'delete-workspace', 'list-workspaces']
+      const hasWorkspaceTools = tools.some(t => workspaceToolNames.includes(t.name))
+
+      if (!hasWorkspaceTools) {
+        const workspaceTools = this._getWorkspaceToolDefinitions()
+        tools = [...tools, ...workspaceTools]
+        console.error(`Added ${workspaceTools.length} client-side workspace tools`)
+      }
+
+      return tools
     } catch (error) {
       console.error(`Failed to get tools: ${error.message}`)
       console.error(`Stack: ${error.stack}`)
@@ -220,18 +251,101 @@ class RoboSystemsMCPClient {
     }
   }
 
+  _getWorkspaceToolDefinitions() {
+    return [
+      {
+        name: 'create-workspace',
+        description: 'Create an isolated workspace (subgraph) for experimentation. Data and queries are isolated from the main graph.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Workspace name (alphanumeric only, 1-20 characters)'
+            },
+            description: {
+              type: 'string',
+              description: 'Optional workspace description'
+            },
+            fork_parent: {
+              type: 'boolean',
+              description: 'Copy data from parent graph to workspace',
+              default: false
+            }
+          },
+          required: ['name']
+        }
+      },
+      {
+        name: 'switch-workspace',
+        description: 'Switch to a different workspace or back to the primary graph. All subsequent operations will use the active workspace.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            workspace_id: {
+              type: 'string',
+              description: 'Workspace ID to switch to, or "primary" for main graph'
+            }
+          },
+          required: ['workspace_id']
+        }
+      },
+      {
+        name: 'delete-workspace',
+        description: 'Delete a workspace and all its data. Cannot delete the primary graph. Switches back to primary if deleting active workspace.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            workspace_id: {
+              type: 'string',
+              description: 'Workspace ID to delete'
+            },
+            force: {
+              type: 'boolean',
+              description: 'Force deletion even if workspace contains data',
+              default: false
+            }
+          },
+          required: ['workspace_id']
+        }
+      },
+      {
+        name: 'list-workspaces',
+        description: 'List all workspaces and show which one is currently active',
+        inputSchema: {
+          type: 'object',
+          properties: {}
+        }
+      }
+    ]
+  }
+
   async callTool(name, args = {}) {
     this.metrics.totalRequests++
-    
+
+    // Intercept workspace management tools (client-side implementation)
+    if (name === 'create-workspace') {
+      return this._handleCreateWorkspace(args)
+    }
+    if (name === 'switch-workspace') {
+      return this._handleSwitchWorkspace(args)
+    }
+    if (name === 'delete-workspace') {
+      return this._handleDeleteWorkspace(args)
+    }
+    if (name === 'list-workspaces') {
+      return this._handleListWorkspaces()
+    }
+
     // Check cache first for cacheable tools
     if (this.isCacheable(name)) {
-      const cached = this.resultCache.get(name, args)
+      const cached = this.resultCache.get(name, args, this.activeGraphId)
       if (cached) {
         this.metrics.cacheHits++
         return cached
       }
     }
-    
+
     // Execute with simple retry logic
     return this.executeWithRetry(() => this._callToolInternal(name, args))
   }
@@ -244,7 +358,7 @@ class RoboSystemsMCPClient {
       }
 
       const response = await fetch(
-        `${this.baseUrl}/v1/graphs/${this.graphId}/mcp/call-tool`,
+        `${this.baseUrl}/v1/graphs/${this.activeGraphId}/mcp/call-tool`,
         {
           method: 'POST',
           headers,
@@ -284,7 +398,7 @@ class RoboSystemsMCPClient {
       // Cache the result if appropriate
       if (this.isCacheable(name)) {
         const ttl = this.getCacheTTL(name)
-        this.resultCache.set(name, args, result, ttl)
+        this.resultCache.set(name, args, result, ttl, this.activeGraphId)
       }
       
       return result
@@ -468,9 +582,9 @@ class RoboSystemsMCPClient {
       console.error(`Query queued with ID: ${data.queue_id}`)
       
       const statusUrl = data.status_url ||
-        `${this.baseUrl}/v1/graphs/${this.graphId}/query/${data.queue_id}/status`
+        `${this.baseUrl}/v1/graphs/${this.activeGraphId}/query/${data.queue_id}/status`
       const resultUrl = data.result_url ||
-        `${this.baseUrl}/v1/graphs/${this.graphId}/query/${data.queue_id}/result`
+        `${this.baseUrl}/v1/graphs/${this.activeGraphId}/query/${data.queue_id}/result`
 
       // Simple polling with exponential backoff
       let attempts = 0
@@ -604,7 +718,7 @@ class RoboSystemsMCPClient {
   }
 
   getMetrics() {
-    const cacheHitRate = this.metrics.totalRequests > 0 
+    const cacheHitRate = this.metrics.totalRequests > 0
       ? (this.metrics.cacheHits / this.metrics.totalRequests * 100).toFixed(1) + '%'
       : '0%'
 
@@ -614,6 +728,348 @@ class RoboSystemsMCPClient {
       cacheHitRate,
       errors: this.metrics.errors,
       activeConnections: this.connectionPool.connections.size,
+      workspaceSwitches: this.metrics.workspaceSwitches,
+      activeWorkspace: this.activeGraphId,
+      totalWorkspaces: this.workspaces.size,
+    }
+  }
+
+  // Workspace management methods
+
+  async _handleCreateWorkspace(args) {
+    const { name, description, fork_parent = false } = args
+
+    try {
+      console.error(`Creating workspace via MCP tool: ${name} (fork_parent: ${fork_parent})`)
+
+      // Call the MCP tool endpoint (server handles the creation)
+      const response = await fetch(
+        `${this.baseUrl}/v1/graphs/${this.primaryGraphId}/mcp/call-tool`,
+        {
+          method: 'POST',
+          headers: this.headers,
+          body: JSON.stringify({
+            name: 'create-workspace',
+            arguments: { name, description, fork_parent }
+          })
+        }
+      )
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
+      }
+
+      const data = await response.json()
+
+      // Parse the result (server returns JSON in result.text)
+      let result
+      if (data.result && data.result.type === 'text' && data.result.text) {
+        try {
+          result = JSON.parse(data.result.text)
+        } catch (e) {
+          result = { message: data.result.text }
+        }
+      } else {
+        result = data.result || data
+      }
+
+      // Check for errors from server
+      if (result.error) {
+        console.error(`Server error creating workspace: ${result.message}`)
+        return {
+          type: 'text',
+          text: JSON.stringify(result, null, 2)
+        }
+      }
+
+      // Server created the workspace successfully
+      const workspaceId = result.workspace_id
+
+      // Track the workspace
+      this.workspaces.set(workspaceId, {
+        type: 'workspace',
+        parent_graph_id: this.primaryGraphId,
+        name,
+        description: result.description || description,
+        created_at: Date.now(),
+        forked_from_parent: fork_parent
+      })
+
+      // Automatically switch to the new workspace
+      const previousGraph = this.activeGraphId
+      this.activeGraphId = workspaceId
+      this.metrics.workspaceSwitches++
+
+      console.error(`Created and switched to workspace: ${workspaceId}`)
+
+      return {
+        type: 'text',
+        text: JSON.stringify({
+          success: true,
+          workspace_id: workspaceId,
+          name,
+          previous_workspace: previousGraph,
+          active: true,
+          forked_from_parent: fork_parent,
+          message: `Created workspace "${name}" and switched to it. All operations now use this isolated environment.`
+        }, null, 2)
+      }
+    } catch (error) {
+      console.error(`Failed to create workspace: ${error.message}`)
+      return {
+        type: 'text',
+        text: JSON.stringify({
+          error: 'Failed to create workspace',
+          message: error.message,
+          workspace_name: name
+        }, null, 2)
+      }
+    }
+  }
+
+  async _handleSwitchWorkspace(args) {
+    const { workspace_id } = args
+
+    // Handle "primary" alias
+    const targetGraphId = workspace_id === 'primary' ? this.primaryGraphId : workspace_id
+
+    // Validate workspace exists
+    if (!this.workspaces.has(targetGraphId)) {
+      return {
+        type: 'text',
+        text: JSON.stringify({
+          error: 'Unknown workspace',
+          workspace_id: targetGraphId,
+          message: `Workspace "${targetGraphId}" not found. Use list-workspaces to see available workspaces.`,
+          available_workspaces: Array.from(this.workspaces.keys())
+        }, null, 2)
+      }
+    }
+
+    // Already in this workspace?
+    if (this.activeGraphId === targetGraphId) {
+      return {
+        type: 'text',
+        text: JSON.stringify({
+          success: true,
+          workspace_id: targetGraphId,
+          message: `Already in workspace "${targetGraphId}"`
+        }, null, 2)
+      }
+    }
+
+    // Switch workspace
+    const previousGraph = this.activeGraphId
+    this.activeGraphId = targetGraphId
+    this.metrics.workspaceSwitches++
+
+    const workspace = this.workspaces.get(targetGraphId)
+    console.error(`Switched from ${previousGraph} to ${targetGraphId}`)
+
+    return {
+      type: 'text',
+      text: JSON.stringify({
+        success: true,
+        switched_from: previousGraph,
+        switched_to: targetGraphId,
+        workspace_type: workspace.type,
+        message: `Switched to ${workspace.type === 'primary' ? 'primary graph' : `workspace "${workspace.name}"`}. All operations now use this environment.`
+      }, null, 2)
+    }
+  }
+
+  async _handleDeleteWorkspace(args) {
+    const { workspace_id, force = false } = args
+
+    try {
+      console.error(`Deleting workspace via MCP tool: ${workspace_id} (force: ${force})`)
+
+      // Call the MCP tool endpoint (server handles the deletion)
+      const response = await fetch(
+        `${this.baseUrl}/v1/graphs/${this.primaryGraphId}/mcp/call-tool`,
+        {
+          method: 'POST',
+          headers: this.headers,
+          body: JSON.stringify({
+            name: 'delete-workspace',
+            arguments: { workspace_id, force }
+          })
+        }
+      )
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
+      }
+
+      const data = await response.json()
+
+      // Parse the result
+      let result
+      if (data.result && data.result.type === 'text' && data.result.text) {
+        try {
+          result = JSON.parse(data.result.text)
+        } catch (e) {
+          result = { message: data.result.text }
+        }
+      } else {
+        result = data.result || data
+      }
+
+      // Check for errors from server
+      if (result.error) {
+        console.error(`Server error deleting workspace: ${result.message}`)
+        return {
+          type: 'text',
+          text: JSON.stringify(result, null, 2)
+        }
+      }
+
+      // Server deleted the workspace successfully
+      const workspace = this.workspaces.get(workspace_id)
+      if (workspace) {
+        this.workspaces.delete(workspace_id)
+      }
+
+      // Switch back to primary if we deleted the active workspace
+      const switchedBack = this.activeGraphId === workspace_id
+      if (switchedBack) {
+        this.activeGraphId = this.primaryGraphId
+        this.metrics.workspaceSwitches++
+      }
+
+      console.error(`Deleted workspace: ${workspace_id}${switchedBack ? ' (switched back to primary)' : ''}`)
+
+      return {
+        type: 'text',
+        text: JSON.stringify({
+          success: true,
+          deleted: workspace_id,
+          active_workspace: this.activeGraphId,
+          switched_back_to_primary: switchedBack,
+          message: result.message || `Deleted workspace "${workspace_id}"${switchedBack ? ' and switched back to primary graph' : ''}.`
+        }, null, 2)
+      }
+    } catch (error) {
+      console.error(`Failed to delete workspace: ${error.message}`)
+      return {
+        type: 'text',
+        text: JSON.stringify({
+          error: 'Failed to delete workspace',
+          message: error.message,
+          workspace_id
+        }, null, 2)
+      }
+    }
+  }
+
+  async _handleListWorkspaces() {
+    try {
+      console.error('Listing workspaces via MCP tool')
+
+      // Call the MCP tool endpoint (server provides the list)
+      const response = await fetch(
+        `${this.baseUrl}/v1/graphs/${this.primaryGraphId}/mcp/call-tool`,
+        {
+          method: 'POST',
+          headers: this.headers,
+          body: JSON.stringify({
+            name: 'list-workspaces',
+            arguments: {}
+          })
+        }
+      )
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
+      }
+
+      const data = await response.json()
+
+      // Parse the result
+      let result
+      if (data.result && data.result.type === 'text' && data.result.text) {
+        try {
+          result = JSON.parse(data.result.text)
+        } catch (e) {
+          result = { message: data.result.text }
+        }
+      } else {
+        result = data.result || data
+      }
+
+      // Check for errors from server
+      if (result.error) {
+        console.error(`Server error listing workspaces: ${result.message}`)
+        return {
+          type: 'text',
+          text: JSON.stringify(result, null, 2)
+        }
+      }
+
+      // Update client tracking with server's workspace list
+      if (result.workspaces) {
+        // Clear and rebuild workspace tracking from server data
+        this.workspaces.clear()
+        for (const ws of result.workspaces) {
+          this.workspaces.set(ws.workspace_id, {
+            type: ws.type,
+            name: ws.name,
+            description: ws.description,
+            parent_graph_id: ws.parent_graph_id,
+            created_at: ws.created_at ? new Date(ws.created_at).getTime() : Date.now()
+          })
+        }
+
+        // Validate that the current activeGraphId still exists
+        if (!this.workspaces.has(this.activeGraphId)) {
+          console.error(`Active workspace ${this.activeGraphId} no longer exists on server, switching to primary`)
+          this.activeGraphId = this.primaryGraphId
+          this.metrics.workspaceSwitches++
+        }
+      }
+
+      // Mark active workspace in response
+      const workspaces = result.workspaces.map(ws => ({
+        ...ws,
+        active: ws.workspace_id === this.activeGraphId
+      }))
+
+      return {
+        type: 'text',
+        text: JSON.stringify({
+          primary_graph_id: result.primary_graph_id,
+          active_workspace: this.activeGraphId,
+          total_workspaces: workspaces.length,
+          workspaces
+        }, null, 2)
+      }
+    } catch (error) {
+      console.error(`Failed to list workspaces: ${error.message}`)
+
+      // Fallback to client-side tracking
+      const workspaces = Array.from(this.workspaces.entries()).map(([id, meta]) => ({
+        workspace_id: id,
+        type: meta.type,
+        name: meta.name,
+        description: meta.description,
+        active: id === this.activeGraphId,
+        created_at: new Date(meta.created_at).toISOString(),
+        parent_graph_id: meta.parent_graph_id
+      }))
+
+      return {
+        type: 'text',
+        text: JSON.stringify({
+          primary_graph_id: this.primaryGraphId,
+          active_workspace: this.activeGraphId,
+          total_workspaces: workspaces.length,
+          workspaces,
+          _note: 'Fallback to client-side tracking due to error'
+        }, null, 2)
+      }
     }
   }
 
@@ -641,7 +1097,8 @@ async function main() {
   }
 
   console.error(`RoboSystems MCP Client v${PACKAGE_VERSION}`)
-  console.error(`Connecting to ${baseUrl} for graph ${graphId}`)
+  console.error(`Connecting to ${baseUrl}`)
+  console.error(`Primary graph: ${graphId}`)
   console.error(`API Key: ${apiKey.substring(0, 10)}...`)
 
   const remoteClient = new RoboSystemsMCPClient(baseUrl, apiKey, graphId)
@@ -711,7 +1168,8 @@ async function main() {
     await server.connect(transport)
 
     console.error('RoboSystems MCP server running')
-    console.error('Features: Connection pooling, smart caching, retry logic, progress tracking')
+    console.error('Features: Workspace management, connection pooling, smart caching, retry logic, progress tracking')
+    console.error(`Active workspace: ${remoteClient.activeGraphId}`)
 
     // Log metrics every 5 minutes
     metricsInterval = setInterval(() => {
@@ -750,13 +1208,16 @@ export {
 // Only run as server if this is the main module
 // Check if we're being run directly (not imported)
 // This works with both `node index.js` and `npx` invocations
-const isMainModule = 
+const isMainModule =
   import.meta.url === `file://${process.argv[1]}` ||
   process.argv[1]?.endsWith('/mcp') ||  // npx binary name
   process.argv[1]?.endsWith('/@robosystems/mcp') || // alternative npx name
   process.argv[1]?.includes('robosystems-mcp'); // package name in path
 
-if (isMainModule) {
+// Don't run in test mode
+const isTestMode = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test'
+
+if (isMainModule && !isTestMode) {
   // Run the server
   main().catch((error) => {
     console.error(`Fatal error: ${error.message}`)
