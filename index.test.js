@@ -106,6 +106,30 @@ describe('ResultCache', () => {
     expect(key1).not.toBe(key2)
   })
 
+  it('should generate different cache keys for different workspaces', () => {
+    const key1 = cache.generateKey('tool-1', { arg1: 'value1' }, 'workspace-1')
+    const key2 = cache.generateKey('tool-1', { arg1: 'value1' }, 'workspace-2')
+    const key3 = cache.generateKey('tool-1', { arg1: 'value1' })
+    expect(key1).not.toBe(key2)
+    expect(key1).not.toBe(key3)
+    expect(key2).not.toBe(key3)
+  })
+
+  it('should isolate cache entries by workspace', () => {
+    const result1 = { type: 'text', text: 'workspace 1 result' }
+    const result2 = { type: 'text', text: 'workspace 2 result' }
+
+    cache.set('tool-1', { arg1: 'value1' }, result1, 10, 'workspace-1')
+    cache.set('tool-1', { arg1: 'value1' }, result2, 10, 'workspace-2')
+
+    const retrieved1 = cache.get('tool-1', { arg1: 'value1' }, 'workspace-1')
+    const retrieved2 = cache.get('tool-1', { arg1: 'value1' }, 'workspace-2')
+
+    expect(retrieved1).toEqual(result1)
+    expect(retrieved2).toEqual(result2)
+    expect(retrieved1).not.toEqual(retrieved2)
+  })
+
   it('should store and retrieve cached results', () => {
     const result = { type: 'text', text: 'test result' }
     cache.set('tool-1', { arg1: 'value1' }, result, 10)

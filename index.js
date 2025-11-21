@@ -59,17 +59,19 @@ class SSEConnectionPool {
 
     // Create new connection
     const eventSource = new EventSource(url, { headers })
+
+    // Auto-cleanup after TTL - store timer ID to prevent memory leaks
+    const cleanupTimer = setTimeout(() => {
+      this.closeConnection(operationId)
+    }, this.connectionTTL)
+
     this.connections.set(operationId, {
       eventSource,
       createdAt: Date.now(),
       lastUsed: Date.now(),
+      cleanupTimer,
     })
 
-    // Auto-cleanup after TTL
-    setTimeout(() => {
-      this.closeConnection(operationId)
-    }, this.connectionTTL)
-    
     return eventSource
   }
 
@@ -92,6 +94,10 @@ class SSEConnectionPool {
   closeConnection(operationId) {
     const conn = this.connections.get(operationId)
     if (conn) {
+      // Clear the cleanup timer to prevent memory leaks
+      if (conn.cleanupTimer) {
+        clearTimeout(conn.cleanupTimer)
+      }
       conn.eventSource.close()
       this.connections.delete(operationId)
     }
@@ -114,10 +120,11 @@ class ResultCache {
     this.cacheExpiry = new Map()
   }
 
-  generateKey(tool, args) {
+  generateKey(tool, args, workspaceId = null) {
     // Sort object keys to ensure deterministic cache keys
+    // Include workspaceId to prevent cache collisions across workspaces
     const sortedArgs = this._sortObjectKeys(args)
-    const data = JSON.stringify({ tool, args: sortedArgs }, null, 0)
+    const data = JSON.stringify({ tool, args: sortedArgs, workspace: workspaceId }, null, 0)
     return createHash('sha256').update(data).digest('hex')
   }
 
@@ -135,9 +142,9 @@ class ResultCache {
     return sortedObj
   }
 
-  get(tool, args) {
-    const key = this.generateKey(tool, args)
-    
+  get(tool, args, workspaceId = null) {
+    const key = this.generateKey(tool, args, workspaceId)
+
     if (this.cache.has(key)) {
       const expiry = this.cacheExpiry.get(key)
       if (expiry > Date.now()) {
@@ -148,12 +155,12 @@ class ResultCache {
         this.cacheExpiry.delete(key)
       }
     }
-    
+
     return null
   }
 
-  set(tool, args, result, ttlSeconds = 300) {
-    const key = this.generateKey(tool, args)
+  set(tool, args, result, ttlSeconds = 300, workspaceId = null) {
+    const key = this.generateKey(tool, args, workspaceId)
     this.cache.set(key, result)
     this.cacheExpiry.set(key, Date.now() + (ttlSeconds * 1000))
   }
@@ -332,7 +339,7 @@ class RoboSystemsMCPClient {
 
     // Check cache first for cacheable tools
     if (this.isCacheable(name)) {
-      const cached = this.resultCache.get(name, args)
+      const cached = this.resultCache.get(name, args, this.activeGraphId)
       if (cached) {
         this.metrics.cacheHits++
         return cached
@@ -391,7 +398,7 @@ class RoboSystemsMCPClient {
       // Cache the result if appropriate
       if (this.isCacheable(name)) {
         const ttl = this.getCacheTTL(name)
-        this.resultCache.set(name, args, result, ttl)
+        this.resultCache.set(name, args, result, ttl, this.activeGraphId)
       }
       
       return result
@@ -1014,6 +1021,13 @@ class RoboSystemsMCPClient {
             parent_graph_id: ws.parent_graph_id,
             created_at: ws.created_at ? new Date(ws.created_at).getTime() : Date.now()
           })
+        }
+
+        // Validate that the current activeGraphId still exists
+        if (!this.workspaces.has(this.activeGraphId)) {
+          console.error(`Active workspace ${this.activeGraphId} no longer exists on server, switching to primary`)
+          this.activeGraphId = this.primaryGraphId
+          this.metrics.workspaceSwitches++
         }
       }
 
