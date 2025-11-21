@@ -1,7 +1,7 @@
 {
   "name": "@robosystems/mcp",
   "version": "0.2.10",
-  "description": "MCP client adapter for connecting AI agents to RoboSystems Financial Knowledge Graph API endpoints",
+  "description": "MCP client adapter for connecting AI agents to RoboSystems Financial Knowledge Graph API endpoints with workspace support",
   "type": "module",
   "main": "index.js",
   "bin": {
@@ -15,6 +15,8 @@
   ],
   "scripts": {
     "start": "node index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "feature:create": "./bin/create-feature",
     "release:create": "./bin/create-release",
     "pr:create": "./bin/create-pr"
@@ -33,6 +35,10 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.1",
     "eventsource": "^4.0.0"
+  },
+  "devDependencies": {
+    "happy-dom": "^20.0.8",
+    "vitest": "^4.0.3"
   },
   "engines": {
     "node": ">=18.0.0"
