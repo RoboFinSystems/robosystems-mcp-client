@@ -141,6 +141,9 @@ dist
 *.sln
 *.sw?
 
-#AI
-.claude/
+# AI - Claude Code
+.claude/settings.local.json
 CLAUDE.local.md
+
+.gemini/
+GEMINI.md
