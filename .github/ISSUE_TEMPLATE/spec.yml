@@ -1,0 +1,143 @@
+name: Technical Specification
+description: Detailed design for a feature or system change
+type: Spec
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      placeholder: One paragraph summary of the specification
+    validations:
+      required: true
+
+  - type: dropdown
+    id: status
+    attributes:
+      label: Status
+      options:
+        - Draft
+        - Review
+        - Approved
+        - In Progress
+        - Complete
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-state
+    attributes:
+      label: "Problem Statement: Current State"
+      placeholder: What exists today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: desired-state
+    attributes:
+      label: "Problem Statement: Desired State"
+      placeholder: What should exist?
+    validations:
+      required: true
+
+  - type: textarea
+    id: why-now
+    attributes:
+      label: "Problem Statement: Why Now?"
+      placeholder: Why is this the right time?
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: "Proposed Solution: Approach"
+      placeholder: High-level description of the solution
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: components
+    attributes:
+      label: Components Affected
+      options:
+        - label: MCP Tools (tool definitions)
+        - label: MCP Resources (resource handlers)
+        - label: API Integration (RoboSystems API calls)
+        - label: Authentication (API key handling)
+        - label: Error Handling
+        - label: Types/Schemas
+        - label: Tests
+        - label: Documentation
+        - label: CI/CD (`.github/workflows/`)
+
+  - type: textarea
+    id: key-changes
+    attributes:
+      label: Key Changes
+      render: text
+      placeholder: Describe key code changes, new files, or architectural changes
+
+  - type: textarea
+    id: api-changes
+    attributes:
+      label: API Changes
+      render: typescript
+      placeholder: |
+        // New tools, resources, or API methods
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Plan
+      placeholder: |
+        - [ ] **Phase 1:**
+        - [ ] **Phase 2:**
+        - [ ] **Phase 3:**
+
+        **Dependencies:**
+
+        **Migration strategy:**
+    validations:
+      required: true
+
+  - type: textarea
+    id: testing
+    attributes:
+      label: Testing
+      placeholder: |
+        - [ ] Unit tests
+        - [ ] Integration tests
+        - [ ] Manual verification
+
+  - type: textarea
+    id: rollout
+    attributes:
+      label: Rollout
+      placeholder: |
+        **npm version bump:** patch / minor / major
+        **Breaking changes:**
+        **Migration guide:**
+
+  - type: textarea
+    id: success
+    attributes:
+      label: Success Criteria
+      placeholder: |
+        - [ ]
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+
+  - type: textarea
+    id: questions
+    attributes:
+      label: Open Questions
+      placeholder: |
+        - [ ]
+
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      placeholder: |
+        - Related: #
+        - Docs:
