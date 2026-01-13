@@ -43,17 +43,18 @@ Add to your MCP servers configuration:
 | `ROBOSYSTEMS_API_KEY` | Your API key | `rfs...` |
 | `ROBOSYSTEMS_GRAPH_ID` | The primary graph database ID (parent for workspaces) | `kg...` or `sec` |
 
-## API Reference
+## Resources
 
-- [RoboSystems](https://robosystems.ai)
-- [MCP API documentation](https://api.robosystems.ai/docs#tag/MCP)
+- [RoboSystems Platform](https://robosystems.ai)
+- [GitHub Repository](https://github.com/RoboFinSystems/robosystems)
+- [MCP API Documentation](https://api.robosystems.ai/docs#tag/MCP)
 
 ## Support
 
 - [Issues](https://github.com/RoboFinSystems/robosystems-mcp-client/issues)
-- [Discussions](https://github.com/RoboFinSystems/robosystems/discussions)
-- [Projects](https://github.com/RoboFinSystems/robosystems/projects)
 - [Wiki](https://github.com/RoboFinSystems/robosystems/wiki)
+- [Projects](https://github.com/orgs/RoboFinSystems/projects)
+- [Discussions](https://github.com/orgs/RoboFinSystems/discussions)
 
 ## License
 
