@@ -10,13 +10,13 @@ on:
     outputs:
       tag_name:
         description: 'The created tag name'
-        value: ${{ jobs.action.outputs.tag_name }}
+        value: ${{ jobs.tag.outputs.tag_name }}
       version:
         description: 'The version number'
-        value: ${{ jobs.action.outputs.version }}
+        value: ${{ jobs.tag.outputs.version }}
       release_url:
         description: 'The GitHub release URL'
-        value: ${{ jobs.action.outputs.release_url }}
+        value: ${{ jobs.tag.outputs.release_url }}
     secrets:
       ACTIONS_TOKEN:
         required: true
@@ -24,8 +24,8 @@ on:
         required: true
 
 jobs:
-  action:
-    runs-on: ubuntu-latest # Use GitHub-hosted runners for memory-intensive git/Claude operations
+  tag:
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
