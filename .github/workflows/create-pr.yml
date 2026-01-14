@@ -21,8 +21,8 @@ on:
         default: true
 
 jobs:
-  action:
-    runs-on: ubuntu-latest # Use GitHub-hosted runners for memory-intensive git/Claude operations
+  create-pr:
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ secrets.ACTIONS_TOKEN }}
