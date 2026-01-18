@@ -6,7 +6,7 @@
   "main": "index.js",
   "bin": {
     "@robosystems/mcp": "./index.js",
-    "create-feature": "./bin/create-feature"
+    "create-feature": "./bin/create-feature.sh"
   },
   "files": [
     "index.js",
@@ -17,9 +17,9 @@
     "start": "node index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "feature:create": "./bin/create-feature",
-    "release:create": "./bin/create-release",
-    "pr:create": "./bin/create-pr"
+    "feature:create": "./bin/create-feature.sh",
+    "release:create": "./bin/create-release.sh",
+    "pr:create": "./bin/create-pr.sh"
   },
   "keywords": [
     "mcp",
