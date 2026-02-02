@@ -42,7 +42,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
       
       - name: Install dependencies
         if: steps.check-published.outputs.already_published == 'false'
