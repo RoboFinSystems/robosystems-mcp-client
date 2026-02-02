@@ -18,8 +18,6 @@ on:
         description: 'The GitHub release URL'
         value: ${{ jobs.tag.outputs.release_url }}
     secrets:
-      ACTIONS_TOKEN:
-        required: true
       ANTHROPIC_API_KEY:
         required: true
 
@@ -37,9 +35,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          repository: RoboFinSystems/robosystems-mcp-client
+          repository: ${{ github.repository }}
           ref: ${{ inputs.branch_ref }}
-          token: ${{ secrets.ACTIONS_TOKEN }}
+          token: ${{ github.token }}
           fetch-depth: 0
 
       - name: Get Version from package.json
@@ -280,7 +278,7 @@ jobs:
           draft: false
           prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Create release summary
         if: steps.check-tag.outputs.tag_exists == 'false'
