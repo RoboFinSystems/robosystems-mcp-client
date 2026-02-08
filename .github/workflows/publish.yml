@@ -42,7 +42,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
         env:
           NODE_AUTH_TOKEN: ''  # Clear default token to use OIDC
 

@@ -33,7 +33,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
 
       - name: Get current version
         id: current-version
@@ -99,11 +98,8 @@ jobs:
           # Update version in package.json
           npm version "$NEW_VERSION" --no-git-tag-version
 
-          # Install dependencies to update lock file
-          npm install
-
           # Commit and push to main
-          git add package.json package-lock.json
+          git add package.json
           git commit -m "Release v$NEW_VERSION"
           git push origin main
 
