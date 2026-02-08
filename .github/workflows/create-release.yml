@@ -32,7 +32,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: '22'
+          cache: 'npm'
 
       - name: Get current version
         id: current-version
@@ -102,7 +103,7 @@ jobs:
           npm install
 
           # Commit and push to main
-          git add package.json
+          git add package.json package-lock.json
           git commit -m "Release v$NEW_VERSION"
           git push origin main
 

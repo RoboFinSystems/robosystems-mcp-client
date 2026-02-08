@@ -52,14 +52,14 @@ describe('SSEConnectionPool', () => {
   it('should evict oldest connection when at max capacity', async () => {
     // Create connections with small delays to ensure different lastUsed times
     pool.getConnection('test-1', 'http://example.com', {})
-    await new Promise(resolve => setTimeout(resolve, 10))
+    await new Promise((resolve) => setTimeout(resolve, 10))
     pool.getConnection('test-2', 'http://example.com', {})
-    await new Promise(resolve => setTimeout(resolve, 10))
+    await new Promise((resolve) => setTimeout(resolve, 10))
     pool.getConnection('test-3', 'http://example.com', {})
     expect(pool.connections.size).toBe(3)
 
     // Small delay before adding 4th connection
-    await new Promise(resolve => setTimeout(resolve, 10))
+    await new Promise((resolve) => setTimeout(resolve, 10))
 
     // Should evict oldest when adding a 4th connection
     pool.getConnection('test-4', 'http://example.com', {})
@@ -190,11 +190,7 @@ describe('RoboSystemsMCPClient', () => {
   beforeEach(() => {
     fetchMock = vi.fn()
     global.fetch = fetchMock
-    client = new RoboSystemsMCPClient(
-      'https://api.example.com',
-      'test-api-key',
-      'test-graph-id'
-    )
+    client = new RoboSystemsMCPClient('https://api.example.com', 'test-api-key', 'test-graph-id')
   })
 
   afterEach(() => {

@@ -15,8 +15,15 @@
   ],
   "scripts": {
     "start": "node index.js",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "validate:fix": "npm run format && npm run lint:fix",
+    "validate": "npm run validate:fix && npm run lint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:all": "npm run validate && npm run test",
     "feature:create": "./bin/create-feature.sh",
     "release:create": "./bin/create-release.sh",
     "pr:create": "./bin/create-pr.sh"
@@ -36,7 +43,12 @@
     "eventsource": "^4.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
     "happy-dom": "^20.0.8",
+    "prettier": "^3.0.0",
     "vitest": "^4.0.3"
   },
   "engines": {
