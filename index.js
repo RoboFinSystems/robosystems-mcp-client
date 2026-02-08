@@ -737,10 +737,10 @@ class RoboSystemsMCPClient {
   // Workspace management methods
 
   async _handleCreateWorkspace(args) {
-    const { name, description, fork_parent = false } = args
+    const { name, description, fork_parent = false, subgraph_type = 'static' } = args
 
     try {
-      console.error(`Creating workspace via MCP tool: ${name} (fork_parent: ${fork_parent})`)
+      console.error(`Creating workspace via MCP tool: ${name} (fork_parent: ${fork_parent}, type: ${subgraph_type})`)
 
       // Call the MCP tool endpoint (server handles the creation)
       const response = await fetch(
@@ -750,7 +750,7 @@ class RoboSystemsMCPClient {
           headers: this.headers,
           body: JSON.stringify({
             name: 'create-workspace',
-            arguments: { name, description, fork_parent }
+            arguments: { name, description, fork_parent, subgraph_type }
           })
         }
       )
