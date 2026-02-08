@@ -38,11 +38,11 @@ Add to your MCP servers configuration:
 
 ## Environment Variables
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `ROBOSYSTEMS_API_URL` | The RoboSystems API endpoint | `https://api.robosystems.ai` |
-| `ROBOSYSTEMS_API_KEY` | Your API key | `rfs...` |
-| `ROBOSYSTEMS_GRAPH_ID` | The primary graph database ID (parent for workspaces) | `kg...` or `sec` |
+| Variable               | Description                                           | Example                      |
+| ---------------------- | ----------------------------------------------------- | ---------------------------- |
+| `ROBOSYSTEMS_API_URL`  | The RoboSystems API endpoint                          | `https://api.robosystems.ai` |
+| `ROBOSYSTEMS_API_KEY`  | Your API key                                          | `rfs...`                     |
+| `ROBOSYSTEMS_GRAPH_ID` | The primary graph database ID (parent for workspaces) | `kg...` or `sec`             |
 
 ## Resources
 

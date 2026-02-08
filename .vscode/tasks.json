@@ -20,6 +20,30 @@
       "problemMatcher": []
     },
     {
+      "label": "Test All",
+      "type": "shell",
+      "command": "npm run test:all",
+      "problemMatcher": []
+    },
+    {
+      "label": "Lint",
+      "type": "shell",
+      "command": "npm run lint",
+      "problemMatcher": []
+    },
+    {
+      "label": "Lint Fix",
+      "type": "shell",
+      "command": "npm run lint:fix",
+      "problemMatcher": []
+    },
+    {
+      "label": "Format",
+      "type": "shell",
+      "command": "npm run format",
+      "problemMatcher": []
+    },
+    {
       "label": "Create Feature",
       "type": "shell",
       "command": "npm run feature:create ${input:branchType} ${input:branchName} ${input:baseBranch} ${input:updateDependencies}",
