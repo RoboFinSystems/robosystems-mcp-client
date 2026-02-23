@@ -7,9 +7,8 @@ Official MCP (Model Context Protocol) client adapter for connecting AI agents to
 
 ## Features
 
-- **AI Memory Graphs** - Persistent agent memory with built-in Concept/Observation/Session schema
+- **AI Memory Graphs** - Persistent agent memory via dedicated memory subgraph workspaces
 - **Workspace Management** - Create isolated subgraphs for memory, data workspaces, and experimentation
-- **Dynamic Schema Extension** - Add custom node and relationship tables to subgraphs via MCP tools
 - **MCP-compliant server** for Claude Desktop, Claude Code, Cursor, and other AI agents
 - **Streaming support** for memory-efficient processing of large result sets
 - **Connection pooling** for optimal SSE performance
