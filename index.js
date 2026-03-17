@@ -754,7 +754,7 @@ class RoboSystemsMCPClient {
         `${this.baseUrl}/v1/graphs/${this.primaryGraphId}/mcp/call-tool`,
         {
           method: 'POST',
-          headers: this.headers,
+          headers: { ...this.headers, Accept: 'application/json' },
           body: JSON.stringify({
             name: 'create-workspace',
             arguments: { name, description, fork_parent, subgraph_type },
@@ -849,7 +849,12 @@ class RoboSystemsMCPClient {
     // Handle "primary" alias
     const targetGraphId = workspace_id === 'primary' ? this.primaryGraphId : workspace_id
 
-    // Validate workspace exists
+    // Validate workspace exists — if not found locally, refresh from server first
+    if (!this.workspaces.has(targetGraphId)) {
+      console.error(`Workspace "${targetGraphId}" not in local cache, refreshing from server...`)
+      await this._refreshWorkspacesCache()
+    }
+
     if (!this.workspaces.has(targetGraphId)) {
       return {
         type: 'text',
@@ -857,7 +862,7 @@ class RoboSystemsMCPClient {
           {
             error: 'Unknown workspace',
             workspace_id: targetGraphId,
-            message: `Workspace "${targetGraphId}" not found. Use list-workspaces to see available workspaces.`,
+            message: `Workspace "${targetGraphId}" not found.`,
             available_workspaces: Array.from(this.workspaces.keys()),
           },
           null,
@@ -917,7 +922,7 @@ class RoboSystemsMCPClient {
         `${this.baseUrl}/v1/graphs/${this.primaryGraphId}/mcp/call-tool`,
         {
           method: 'POST',
-          headers: this.headers,
+          headers: { ...this.headers, Accept: 'application/json' },
           body: JSON.stringify({
             name: 'delete-workspace',
             arguments: { workspace_id, force },
@@ -1003,20 +1008,14 @@ class RoboSystemsMCPClient {
     }
   }
 
-  async _handleListWorkspaces() {
+  async _refreshWorkspacesCache() {
     try {
-      console.error('Listing workspaces via MCP tool')
-
-      // Call the MCP tool endpoint (server provides the list)
       const response = await fetch(
         `${this.baseUrl}/v1/graphs/${this.primaryGraphId}/mcp/call-tool`,
         {
           method: 'POST',
-          headers: this.headers,
-          body: JSON.stringify({
-            name: 'list-workspaces',
-            arguments: {},
-          }),
+          headers: { ...this.headers, Accept: 'application/json' },
+          body: JSON.stringify({ name: 'list-workspaces', arguments: {} }),
         }
       )
 
@@ -1027,7 +1026,6 @@ class RoboSystemsMCPClient {
 
       const data = await response.json()
 
-      // Parse the result
       let result
       if (data.result && data.result.type === 'text' && data.result.text) {
         try {
@@ -1039,18 +1037,7 @@ class RoboSystemsMCPClient {
         result = data.result || data
       }
 
-      // Check for errors from server
-      if (result.error) {
-        console.error(`Server error listing workspaces: ${result.message}`)
-        return {
-          type: 'text',
-          text: JSON.stringify(result, null, 2),
-        }
-      }
-
-      // Update client tracking with server's workspace list
       if (result.workspaces) {
-        // Clear and rebuild workspace tracking from server data
         this.workspaces.clear()
         for (const ws of result.workspaces) {
           this.workspaces.set(ws.workspace_id, {
@@ -1061,39 +1048,20 @@ class RoboSystemsMCPClient {
             created_at: ws.created_at ? new Date(ws.created_at).getTime() : Date.now(),
           })
         }
-
-        // Validate that the current activeGraphId still exists
-        if (!this.workspaces.has(this.activeGraphId)) {
-          console.error(
-            `Active workspace ${this.activeGraphId} no longer exists on server, switching to primary`
-          )
-          this.activeGraphId = this.primaryGraphId
-          this.metrics.workspaceSwitches++
-        }
       }
 
-      // Mark active workspace in response
-      const workspaces = result.workspaces.map((ws) => ({
-        ...ws,
-        active: ws.workspace_id === this.activeGraphId,
-      }))
-
-      return {
-        type: 'text',
-        text: JSON.stringify(
-          {
-            primary_graph_id: result.primary_graph_id,
-            active_workspace: this.activeGraphId,
-            total_workspaces: workspaces.length,
-            workspaces,
-          },
-          null,
-          2
-        ),
-      }
+      return result
     } catch (error) {
-      console.error(`Failed to list workspaces: ${error.message}`)
+      console.error(`Failed to refresh workspaces cache: ${error.message}`)
+      return null
+    }
+  }
 
+  async _handleListWorkspaces() {
+    console.error('Listing workspaces via MCP tool')
+    const result = await this._refreshWorkspacesCache()
+
+    if (!result) {
       // Fallback to client-side tracking
       const workspaces = Array.from(this.workspaces.entries()).map(([id, meta]) => ({
         workspace_id: id,
@@ -1119,6 +1087,49 @@ class RoboSystemsMCPClient {
           2
         ),
       }
+    }
+
+    if (result.error) {
+      console.error(`Server error listing workspaces: ${result.message}`)
+      return {
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }
+    }
+
+    if (!result.workspaces) {
+      return {
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }
+    }
+
+    // Validate that the current activeGraphId still exists
+    if (!this.workspaces.has(this.activeGraphId)) {
+      console.error(
+        `Active workspace ${this.activeGraphId} no longer exists on server, switching to primary`
+      )
+      this.activeGraphId = this.primaryGraphId
+      this.metrics.workspaceSwitches++
+    }
+
+    const workspaces = result.workspaces.map((ws) => ({
+      ...ws,
+      active: ws.workspace_id === this.activeGraphId,
+    }))
+
+    return {
+      type: 'text',
+      text: JSON.stringify(
+        {
+          primary_graph_id: result.primary_graph_id,
+          active_workspace: this.activeGraphId,
+          total_workspaces: workspaces.length,
+          workspaces,
+        },
+        null,
+        2
+      ),
     }
   }
 
