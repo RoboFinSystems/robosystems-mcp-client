@@ -452,93 +452,81 @@ class RoboSystemsMCPClient {
   }
 
   async handleSSEResponse(response, toolName) {
-    return new Promise((resolve, reject) => {
-      const events = []
-      const operationId = response.headers.get('x-operation-id') || `sse-${Date.now()}`
+    // Read SSE events directly from the POST response body instead of opening
+    // a new EventSource. EventSource always uses GET, which 405s on this
+    // POST-only endpoint. The SSE stream is already in the response body.
+    const events = []
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
 
-      const eventSource = this.connectionPool.getConnection(operationId, response.url, this.headers)
-
-      const timeout = setTimeout(() => {
-        this.connectionPool.closeConnection(operationId)
-        reject(new Error('SSE timeout after 5 minutes'))
-      }, 300000)
-
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          events.push({ event: event.type || 'message', data })
-        } catch (e) {
-          console.error('Failed to parse SSE event:', e)
-        }
-      }
-
-      eventSource.addEventListener('complete', () => {
-        clearTimeout(timeout)
-        const result = this.aggregateStreamedResults(events, toolName)
-        resolve(result)
-      })
-
-      // Listen for the actual server event types
-      eventSource.addEventListener('operation_completed', () => {
-        clearTimeout(timeout)
-        this.connectionPool.closeConnection(operationId)
-        const result = this.aggregateStreamedResults(events, toolName)
-        resolve(result)
-      })
-
-      eventSource.addEventListener('operation_error', (event) => {
-        clearTimeout(timeout)
-        this.connectionPool.closeConnection(operationId)
-        try {
-          const data = JSON.parse(event.data)
-          reject(new Error(data.error || data.message || 'Operation failed'))
-        } catch (_e) {
-          reject(new Error('Operation failed'))
-        }
-      })
-
-      eventSource.addEventListener('error', () => {
-        clearTimeout(timeout)
-        this.connectionPool.closeConnection(operationId)
-
-        if (events.length > 0) {
-          const result = this.aggregateStreamedResults(events, toolName)
-          resolve(result)
-        } else {
-          reject(new Error('SSE connection failed'))
-        }
-      })
-
-      // Handle specific event types
-      eventSource.addEventListener('query_chunk', (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          events.push({ event: 'query_chunk', data })
-        } catch (e) {
-          console.error('Failed to parse query chunk:', e)
-        }
-      })
-
-      eventSource.addEventListener('progress', (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          console.error(`Progress: ${data.message || 'Processing...'}`)
-        } catch (_e) {
-          // Ignore progress parsing errors
-        }
-      })
-
-      // Also listen for operation_progress events
-      eventSource.addEventListener('operation_progress', (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          const progress = data.percentage ? `${data.percentage}% - ` : ''
-          console.error(`Progress: ${progress}${data.message || 'Processing...'}`)
-        } catch (_e) {
-          // Ignore progress parsing errors
-        }
-      })
+    let timeoutId
+    const timeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error('SSE timeout after 5 minutes')), 300000)
     })
+
+    const readStream = async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (line.startsWith('data:')) {
+              const dataStr = line.slice(5).trim()
+              if (!dataStr || dataStr === '[DONE]') continue
+
+              let data
+              try {
+                data = JSON.parse(dataStr)
+              } catch (e) {
+                console.error('Failed to parse SSE event:', e)
+                continue
+              }
+
+              const eventType = data.event || 'message'
+
+              if (eventType === 'operation_error') {
+                throw new Error(data.data?.error || data.data?.message || 'Operation failed')
+              }
+
+              if (eventType === 'operation_progress' || eventType === 'progress') {
+                const progress = data.data?.percentage ? `${data.data.percentage}% - ` : ''
+                console.error(`Progress: ${progress}${data.data?.message || 'Processing...'}`)
+                continue
+              }
+
+              events.push({ event: eventType, data: data.data ?? data })
+
+              if (eventType === 'complete' || eventType === 'operation_completed') {
+                return
+              }
+            } else if (line.startsWith('event:')) {
+              // event: lines are handled via the data: payload's event field
+            }
+          }
+        }
+      } finally {
+        reader.cancel().catch(() => {})
+      }
+    }
+
+    try {
+      await Promise.race([readStream(), timeout])
+    } finally {
+      clearTimeout(timeoutId)
+      reader.cancel().catch(() => {})
+    }
+
+    if (events.length === 0) {
+      throw new Error('SSE connection failed')
+    }
+
+    return this.aggregateStreamedResults(events, toolName)
   }
 
   async handleNDJSONResponse(response) {
