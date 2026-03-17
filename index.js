@@ -1097,6 +1097,13 @@ class RoboSystemsMCPClient {
       }
     }
 
+    if (!result.workspaces) {
+      return {
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }
+    }
+
     // Validate that the current activeGraphId still exists
     if (!this.workspaces.has(this.activeGraphId)) {
       console.error(
