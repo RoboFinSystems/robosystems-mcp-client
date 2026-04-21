@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-npm run test:all
+# Run checks individually so a failure stops early and is clearly attributed.
+# Use check-only variants (no --write / --fix) — auto-fixing mid-commit leaves
+# the working tree out of sync with the snapshot git is about to commit.
+
+echo "→ format:check"
+npm run --silent format:check
+
+echo "→ lint"
+npm run --silent lint
+
+echo "→ test"
+npm run --silent test
