@@ -181,6 +181,7 @@ class RoboSystemsMCPClient {
     this.primaryGraphId = graphId // Parent graph (never changes)
     this.activeGraphId = graphId // Currently active graph (can switch to workspaces)
     this.graphId = graphId // Deprecated: kept for backward compatibility
+    this.instructions = null // Per-graph routing guidance for the active graph (set by getTools)
     this.headers = {
       'X-API-Key': apiKey,
       'Content-Type': 'application/json',
@@ -227,6 +228,10 @@ class RoboSystemsMCPClient {
 
       const data = await response.json()
       let tools = data.tools || []
+      // Per-graph routing guidance for the active graph. Surfaced to the host
+      // via the handshake `instructions` field (primary graph) and inline in
+      // switch-workspace results (switched graph).
+      this.instructions = data.instructions ?? null
       console.error(`Got ${tools.length} tools from API`)
 
       // Add client-side workspace tools (if not already provided by server)
@@ -248,6 +253,7 @@ class RoboSystemsMCPClient {
     } catch (error) {
       console.error(`Failed to get tools: ${error.message}`)
       console.error(`Stack: ${error.stack}`)
+      this.instructions = null
       return []
     }
   }
@@ -895,6 +901,16 @@ class RoboSystemsMCPClient {
     const workspace = this.workspaces.get(targetGraphId)
     console.error(`Switched from ${previousGraph} to ${targetGraphId}`)
 
+    // The handshake `instructions` field is immutable mid-session, so surface
+    // the now-active graph's routing guidance inline in the switch result.
+    let instructions
+    try {
+      await this.getTools()
+      instructions = this.instructions || undefined
+    } catch (error) {
+      console.error(`Could not load instructions for ${targetGraphId}: ${error.message}`)
+    }
+
     return {
       type: 'text',
       text: JSON.stringify(
@@ -904,6 +920,7 @@ class RoboSystemsMCPClient {
           switched_to: targetGraphId,
           workspace_type: workspace.type,
           message: `Switched to ${workspace.type === 'primary' ? 'primary graph' : `workspace "${workspace.name}"`}. All operations now use this environment.`,
+          ...(instructions ? { instructions } : {}),
         },
         null,
         2
@@ -1163,16 +1180,43 @@ async function main() {
 
   const remoteClient = new RoboSystemsMCPClient(baseUrl, apiKey, graphId)
 
+  // Prefetch the primary graph's tools + instructions BEFORE constructing the
+  // server. The MCP `instructions` field ships in the initialize handshake and
+  // is immutable afterward, so it must be present at construction time (unlike
+  // tools, which are fetched lazily per ListTools request). This also serves as
+  // the initial connection test.
+  let primaryInstructions
+  try {
+    console.error('Testing API connection...')
+    const tools = await remoteClient.getTools()
+    const toolNames = tools.map((t) => t.name)
+    console.error(`Connected successfully. Available tools: ${toolNames.join(', ')}`)
+    primaryInstructions = remoteClient.instructions || undefined
+    if (primaryInstructions) {
+      console.error(
+        `Loaded per-graph instructions for ${graphId} (${primaryInstructions.length} chars)`
+      )
+    }
+  } catch (error) {
+    console.error(`Initial connection test failed: ${error.message}`)
+    // Continue anyway: ListTools retries on demand; instructions stay unset.
+  }
+
+  const serverOptions = {
+    capabilities: {
+      tools: {},
+    },
+  }
+  if (primaryInstructions) {
+    serverOptions.instructions = primaryInstructions
+  }
+
   const server = new Server(
     {
       name: 'robosystems-mcp',
       version: PACKAGE_VERSION,
     },
-    {
-      capabilities: {
-        tools: {},
-      },
-    }
+    serverOptions
   )
 
   // List tools handler
@@ -1218,13 +1262,8 @@ async function main() {
     }
   })
 
-  // Test connection and start server
+  // Start server (connection + tools already verified during prefetch above)
   try {
-    console.error('Testing API connection...')
-    const tools = await remoteClient.getTools()
-    const toolNames = tools.map((t) => t.name)
-    console.error(`Connected successfully. Available tools: ${toolNames.join(', ')}`)
-
     const transport = new StdioServerTransport()
     console.error('Starting MCP stdio transport...')
     await server.connect(transport)

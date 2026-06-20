@@ -301,6 +301,27 @@ describe('RoboSystemsMCPClient', () => {
       const tools = await client.getTools()
       expect(tools).toEqual([])
     })
+
+    it('should capture per-graph instructions from the response', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ tools: [], instructions: 'ROUTING GUIDANCE' }),
+      })
+
+      await client.getTools()
+      expect(client.instructions).toBe('ROUTING GUIDANCE')
+    })
+
+    it('should null out instructions when the response omits them', async () => {
+      client.instructions = 'stale'
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ tools: [] }),
+      })
+
+      await client.getTools()
+      expect(client.instructions).toBeNull()
+    })
   })
 
   describe('callTool - caching', () => {
@@ -425,6 +446,28 @@ describe('RoboSystemsMCPClient', () => {
       const parsedResult = JSON.parse(result.text)
       expect(parsedResult.success).toBe(true)
       expect(parsedResult.message).toContain('Already in workspace')
+    })
+
+    it('should surface the target graph instructions in the switch result', async () => {
+      client.workspaces.set('test-workspace-1', {
+        type: 'workspace',
+        name: 'test',
+        parent_graph_id: client.primaryGraphId,
+      })
+
+      // _handleSwitchWorkspace refreshes instructions via getTools()
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ tools: [], instructions: 'WORKSPACE GUIDANCE' }),
+      })
+
+      const result = await client._handleSwitchWorkspace({
+        workspace_id: 'test-workspace-1',
+      })
+
+      const parsedResult = JSON.parse(result.text)
+      expect(parsedResult.switched_to).toBe('test-workspace-1')
+      expect(parsedResult.instructions).toBe('WORKSPACE GUIDANCE')
     })
   })
 
