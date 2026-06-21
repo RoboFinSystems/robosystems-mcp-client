@@ -31,6 +31,54 @@ const packageJson = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'ut
 const PACKAGE_VERSION = packageJson.version
 
 /**
+ * Numeric semver compare for the three core components ("1.2.3").
+ * Pre-release tags are ignored — good enough for a stale-version warning.
+ */
+function _isNewerVersion(latest, current) {
+  const a = String(latest)
+    .split('.')
+    .map((n) => parseInt(n, 10) || 0)
+  const b = String(current)
+    .split('.')
+    .map((n) => parseInt(n, 10) || 0)
+  for (let i = 0; i < 3; i++) {
+    if (a[i] > b[i]) return true
+    if (a[i] < b[i]) return false
+  }
+  return false
+}
+
+/**
+ * Best-effort check for a newer published version. Runs once at startup, never
+ * blocks, and only logs to stderr. Surfaces the silent stale-install problem: a
+ * global `npm i -g @robosystems/mcp` can shadow `npx -y` and pin an old version
+ * without any error, so a published update never reaches the user.
+ */
+async function checkForUpdate() {
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 2500)
+    const response = await fetch('https://registry.npmjs.org/@robosystems/mcp/latest', {
+      signal: controller.signal,
+    })
+    clearTimeout(timer)
+    if (!response.ok) return
+    const data = await response.json()
+    const latest = data?.version
+    if (latest && _isNewerVersion(latest, PACKAGE_VERSION)) {
+      console.error(
+        `⚠️  @robosystems/mcp ${latest} is available — you are running ${PACKAGE_VERSION}.`
+      )
+      console.error('   A global install can shadow `npx -y` and pin an old version. Update with:')
+      console.error('     npm i -g @robosystems/mcp@latest')
+      console.error('   or pin "@robosystems/mcp@latest" in your MCP config args.')
+    }
+  } catch {
+    // Best-effort only — never block or fail startup on the update check.
+  }
+}
+
+/**
  * Simple SSE Connection Pool
  * Reuses connections for better performance
  */
@@ -1174,6 +1222,7 @@ async function main() {
   }
 
   console.error(`RoboSystems MCP Client v${PACKAGE_VERSION}`)
+  void checkForUpdate() // fire-and-forget stale-version warning (stderr only)
   console.error(`Connecting to ${baseUrl}`)
   console.error(`Primary graph: ${graphId}`)
   console.error(`API Key: ${apiKey.substring(0, 10)}...`)
