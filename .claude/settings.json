@@ -11,6 +11,7 @@
       "Bash(git branch -r:*)",
       "Bash(git branch -v:*)",
       "Bash(git fetch:*)",
+      "Bash(git push:*)",
       "Bash(ls:*)",
       "Bash(tree:*)",
       "Bash(wc:*)",
@@ -48,7 +49,6 @@
       "mcp__ide__getDiagnostics"
     ],
     "deny": [
-      "Bash(git push:*)",
       "Bash(git reset:*)",
       "Bash(git clean:*)",
       "Bash(git branch -D:*)",
