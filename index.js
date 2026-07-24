@@ -330,9 +330,9 @@ class RoboSystemsMCPClient {
             },
             subgraph_type: {
               type: 'string',
-              enum: ['static', 'memory'],
+              enum: ['static', 'knowledge'],
               description:
-                'Type of subgraph: "static" for standard isolated workspace, "memory" for memory-enabled workspace',
+                'Type of subgraph: "static" for a standard isolated workspace, "knowledge" for one seeded with the knowledge schema',
               default: 'static',
             },
           },
@@ -790,7 +790,7 @@ class RoboSystemsMCPClient {
 
   async _handleCreateWorkspace(args) {
     const { name, description, fork_parent = false, subgraph_type = 'static' } = args
-    const validSubgraphTypes = ['static', 'memory']
+    const validSubgraphTypes = ['static', 'knowledge']
 
     if (!validSubgraphTypes.includes(subgraph_type)) {
       throw new Error(
@@ -810,7 +810,7 @@ class RoboSystemsMCPClient {
           method: 'POST',
           headers: { ...this.headers, Accept: 'application/json' },
           body: JSON.stringify({
-            name: 'create-workspace',
+            name: 'create-subgraph',
             arguments: { name, description, fork_parent, subgraph_type },
           }),
         }
@@ -844,8 +844,9 @@ class RoboSystemsMCPClient {
         }
       }
 
-      // Server created the workspace successfully
-      const workspaceId = result.workspace_id
+      // Server created the workspace successfully (`subgraph_id` on the
+      // current server; `workspace_id` accepted for older servers)
+      const workspaceId = result.subgraph_id ?? result.workspace_id
 
       // Track the workspace
       this.workspaces.set(workspaceId, {
@@ -989,8 +990,8 @@ class RoboSystemsMCPClient {
           method: 'POST',
           headers: { ...this.headers, Accept: 'application/json' },
           body: JSON.stringify({
-            name: 'delete-workspace',
-            arguments: { workspace_id, force },
+            name: 'delete-subgraph',
+            arguments: { subgraph_id: workspace_id, force },
           }),
         }
       )
@@ -1075,12 +1076,15 @@ class RoboSystemsMCPClient {
 
   async _refreshWorkspacesCache() {
     try {
+      // The server tool family speaks "subgraphs" (`list-subgraphs`,
+      // `subgraphs[].subgraph_id`); this client keeps the "workspace"
+      // vocabulary on its own surface and normalizes here.
       const response = await fetch(
         `${this.baseUrl}/v1/graphs/${this.primaryGraphId}/mcp/call-tool`,
         {
           method: 'POST',
           headers: { ...this.headers, Accept: 'application/json' },
-          body: JSON.stringify({ name: 'list-workspaces', arguments: {} }),
+          body: JSON.stringify({ name: 'list-subgraphs', arguments: {} }),
         }
       )
 
@@ -1102,20 +1106,34 @@ class RoboSystemsMCPClient {
         result = data.result || data
       }
 
-      if (result.workspaces) {
-        this.workspaces.clear()
-        for (const ws of result.workspaces) {
-          this.workspaces.set(ws.workspace_id, {
-            type: ws.type,
-            name: ws.name,
-            description: ws.description,
-            parent_graph_id: ws.parent_graph_id,
-            created_at: ws.created_at ? new Date(ws.created_at).getTime() : Date.now(),
-          })
-        }
+      if (!result.subgraphs) {
+        return result
       }
 
-      return result
+      const workspaces = result.subgraphs.map((sg) => ({
+        workspace_id: sg.subgraph_id,
+        type: sg.type === 'primary' ? 'primary' : 'workspace',
+        name: sg.name,
+        description: sg.description,
+        parent_graph_id: sg.parent_graph_id,
+        created_at: sg.created_at,
+      }))
+
+      this.workspaces.clear()
+      for (const ws of workspaces) {
+        this.workspaces.set(ws.workspace_id, {
+          type: ws.type,
+          name: ws.name,
+          description: ws.description,
+          parent_graph_id: ws.parent_graph_id,
+          created_at: ws.created_at ? new Date(ws.created_at).getTime() : Date.now(),
+        })
+      }
+
+      return {
+        primary_graph_id: result.primary_graph_id,
+        workspaces,
+      }
     } catch (error) {
       console.error(`Failed to refresh workspaces cache: ${error.message}`)
       return null

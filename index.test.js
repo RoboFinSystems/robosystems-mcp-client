@@ -469,6 +469,154 @@ describe('RoboSystemsMCPClient', () => {
       expect(parsedResult.switched_to).toBe('test-workspace-1')
       expect(parsedResult.instructions).toBe('WORKSPACE GUIDANCE')
     })
+
+    it('should refresh the roster via list-subgraphs when switching to an unknown workspace', async () => {
+      // The regression: a subgraph created after handshake (via the server's
+      // create-subgraph tool) is not in the local roster; the on-miss refresh
+      // must speak the server's `list-subgraphs` protocol to find it.
+      const listSubgraphsResult = {
+        primary_graph_id: 'test-graph-id',
+        total_subgraphs: 1,
+        subgraphs: [
+          {
+            subgraph_id: 'test-graph-id',
+            name: 'main',
+            type: 'primary',
+            parent_graph_id: null,
+          },
+          {
+            subgraph_id: 'test-graph-id_sandbox',
+            name: 'sandbox',
+            type: 'subgraph',
+            parent_graph_id: 'test-graph-id',
+            created_at: '2026-07-24T03:11:04.089824',
+          },
+        ],
+      }
+      fetchMock
+        .mockResolvedValueOnce({
+          // the refresh call
+          ok: true,
+          json: async () => ({
+            result: { type: 'text', text: JSON.stringify(listSubgraphsResult) },
+          }),
+        })
+        .mockResolvedValueOnce({
+          // getTools() for the switched-to graph's instructions
+          ok: true,
+          json: async () => ({ tools: [] }),
+        })
+
+      const result = await client._handleSwitchWorkspace({
+        workspace_id: 'test-graph-id_sandbox',
+      })
+
+      const refreshCall = fetchMock.mock.calls[0]
+      expect(JSON.parse(refreshCall[1].body).name).toBe('list-subgraphs')
+
+      const parsedResult = JSON.parse(result.text)
+      expect(parsedResult.success).toBe(true)
+      expect(parsedResult.switched_to).toBe('test-graph-id_sandbox')
+      expect(client.activeGraphId).toBe('test-graph-id_sandbox')
+      // The refreshed roster keeps the primary recognizable.
+      expect(client.workspaces.get('test-graph-id').type).toBe('primary')
+      expect(client.workspaces.get('test-graph-id_sandbox').type).toBe('workspace')
+    })
+
+    it('should normalize list-subgraphs into the workspace shape for list-workspaces', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          result: {
+            type: 'text',
+            text: JSON.stringify({
+              primary_graph_id: 'test-graph-id',
+              subgraphs: [
+                {
+                  subgraph_id: 'test-graph-id',
+                  name: 'main',
+                  type: 'primary',
+                  parent_graph_id: null,
+                },
+                {
+                  subgraph_id: 'test-graph-id_scratch',
+                  name: 'scratch',
+                  type: 'subgraph',
+                  parent_graph_id: 'test-graph-id',
+                },
+              ],
+            }),
+          },
+        }),
+      })
+
+      const result = await client._handleListWorkspaces()
+      const parsed = JSON.parse(result.text)
+      expect(parsed.primary_graph_id).toBe('test-graph-id')
+      expect(parsed.total_workspaces).toBe(2)
+      expect(parsed.workspaces.map((ws) => ws.workspace_id)).toEqual([
+        'test-graph-id',
+        'test-graph-id_scratch',
+      ])
+      expect(parsed.workspaces[0].active).toBe(true)
+    })
+
+    it('should create a workspace via the server create-subgraph tool', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          result: {
+            type: 'text',
+            text: JSON.stringify({
+              subgraph_id: 'test-graph-id_lab',
+              name: 'lab',
+              parent_graph_id: 'test-graph-id',
+              subgraph_type: 'static',
+            }),
+          },
+        }),
+      })
+
+      const result = await client._handleCreateWorkspace({ name: 'lab' })
+
+      const createCall = fetchMock.mock.calls[0]
+      expect(JSON.parse(createCall[1].body).name).toBe('create-subgraph')
+
+      const parsed = JSON.parse(result.text)
+      expect(parsed.success).toBe(true)
+      expect(parsed.workspace_id).toBe('test-graph-id_lab')
+      expect(client.activeGraphId).toBe('test-graph-id_lab')
+    })
+
+    it('should delete a workspace via the server delete-subgraph tool', async () => {
+      client.workspaces.set('test-graph-id_lab', {
+        type: 'workspace',
+        name: 'lab',
+        parent_graph_id: client.primaryGraphId,
+      })
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          result: {
+            type: 'text',
+            text: JSON.stringify({ deleted: true, subgraph_id: 'test-graph-id_lab' }),
+          },
+        }),
+      })
+
+      const result = await client._handleDeleteWorkspace({
+        workspace_id: 'test-graph-id_lab',
+      })
+
+      const deleteCall = fetchMock.mock.calls[0]
+      const body = JSON.parse(deleteCall[1].body)
+      expect(body.name).toBe('delete-subgraph')
+      expect(body.arguments.subgraph_id).toBe('test-graph-id_lab')
+
+      const parsed = JSON.parse(result.text)
+      expect(parsed.success).toBe(true)
+      expect(client.workspaces.has('test-graph-id_lab')).toBe(false)
+    })
   })
 
   describe('aggregateStreamedResults', () => {
