@@ -11,14 +11,24 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+
+    # 22 is the oldest Node still in support; 24 is the LTS the consuming
+    # apps now run on. Testing only the newest would leave consumers on 22
+    # unverified. Node 18 is omitted despite engines.node — it went EOL in
+    # April 2025.
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['22', '24']
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set up Node.js
+      - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node-version }}
 
       - name: Install Dependencies
         run: npm install
