@@ -86,7 +86,7 @@ Look for issues labeled `good first issue` or `help wanted`. These are great sta
 
 ### Prerequisites
 
-- Node.js 22.x+ (check `.nvmrc`)
+- Node.js 22.x or 24.x (CI tests both)
 - npm 10.x+
 - Git configured with your GitHub account
 
