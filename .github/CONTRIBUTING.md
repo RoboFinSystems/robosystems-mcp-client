@@ -258,6 +258,8 @@ npm publish
 
 **Note:** Only maintainers can publish new versions.
 
+**Release notes:** `tag-release.yml` auto-generates the GitHub release changelog from the changes since the last tag (via the Claude API). For milestone releases, commit curated notes to `.github/release-notes/v<version>.md` _before_ dispatching `create-release.yml` — when that file exists at the tagged ref it is used as the release body verbatim (and the statistics section is skipped).
+
 ## Security
 
 ### Security Vulnerabilities
