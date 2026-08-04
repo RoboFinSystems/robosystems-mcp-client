@@ -51,13 +51,18 @@ jobs:
 
       - name: Check If Tag Exists
         id: check-tag
+        # SECURITY (H2): the version originates in package.json, which carries
+        # the same trust level as a commit message — pass it via env rather
+        # than splicing it into the script with ${{ ... }}.
+        env:
+          VERSION: ${{ steps.get-version.outputs.version }}
         run: |
-          if [ $(git tag -l "v${{ steps.get-version.outputs.version }}") ]; then
+          if [ $(git tag -l "v${VERSION}") ]; then
             echo "tag_exists=true" >> $GITHUB_OUTPUT
-            echo "Tag v${{ steps.get-version.outputs.version }} already exists"
+            echo "Tag v${VERSION} already exists"
           else
             echo "tag_exists=false" >> $GITHUB_OUTPUT
-            echo "Tag v${{ steps.get-version.outputs.version }} does not exist yet"
+            echo "Tag v${VERSION} does not exist yet"
           fi
 
       - name: Check for curated release notes
@@ -82,11 +87,15 @@ jobs:
       - name: Analyze changes since last release
         if: steps.check-tag.outputs.tag_exists == 'false'
         id: analyze-changes
+        # SECURITY (H2): the version originates in package.json — pass it via
+        # env rather than splicing it into the script with ${{ ... }}.
+        env:
+          VERSION: ${{ steps.get-version.outputs.version }}
         run: |
-          VERSION="${{ steps.get-version.outputs.version }}"
-
-          # Get the last release tag
-          LAST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          # Get the last release tag. The pattern is anchored at BOTH ends so
+          # only strict vMAJOR.MINOR.PATCH tags are eligible; a leading-anchor
+          # match would also accept tags that merely start with a version.
+          LAST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
 
           if [ -z "$LAST_TAG" ]; then
             echo "No previous release found, analyzing all commits"
@@ -220,13 +229,16 @@ jobs:
       - name: Call Claude API for changelog
         if: steps.check-tag.outputs.tag_exists == 'false' && steps.curated-notes.outputs.found != 'true'
         id: claude-changelog
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-sonnet-4-6' }}
         run: |
           # Call Claude API with the analysis prompt
           PROMPT=$(cat /tmp/changelog_prompt.txt)
 
           # Create a proper JSON payload using jq to handle escaping
           PAYLOAD=$(jq -n \
-            --arg model "${{ vars.CLAUDE_MODEL || 'claude-sonnet-4-6' }}" \
+            --arg model "$CLAUDE_MODEL" \
             --arg content "$PROMPT" \
             '{
               "model": $model,
@@ -239,11 +251,17 @@ jobs:
               ]
             }')
 
-          RESPONSE=$(curl -s --max-time 60 --retry 3 --retry-delay 10 -X POST "https://api.anthropic.com/v1/messages" \
-            -H "Content-Type: application/json" \
-            -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
-            -H "anthropic-version: 2023-06-01" \
-            -d "$PAYLOAD")
+          # SECURITY: feed the credential header through curl's stdin config
+          # rather than as a command-line argument. Any process on the runner
+          # can read another process's argv, and passing the header as -H
+          # "x-api-key: $ANTHROPIC_API_KEY" would still expose it there — the
+          # shell expands the variable before exec, so the literal value lands
+          # in argv either way. --config - keeps it off argv entirely.
+          RESPONSE=$(printf 'header = "x-api-key: %s"\n' "$ANTHROPIC_API_KEY" | \
+            curl -s --config - --max-time 60 --retry 3 --retry-delay 10 -X POST "https://api.anthropic.com/v1/messages" \
+              -H "Content-Type: application/json" \
+              -H "anthropic-version: 2023-06-01" \
+              -d "$PAYLOAD")
 
           # Check for API errors
           if echo "$RESPONSE" | jq -e '.error' > /dev/null; then
@@ -331,11 +349,15 @@ jobs:
 
       - name: Create Release Tag
         if: steps.check-tag.outputs.tag_exists == 'false'
+        # SECURITY (H2): the version originates in package.json — pass it via
+        # env rather than splicing it into the script with ${{ ... }}.
+        env:
+          VERSION: ${{ steps.get-version.outputs.version }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v${{ steps.get-version.outputs.version }}" -m "Release v${{ steps.get-version.outputs.version }}"
-          git push origin "v${{ steps.get-version.outputs.version }}"
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          git push origin "v${VERSION}"
 
       - name: Create GitHub Release
         if: steps.check-tag.outputs.tag_exists == 'false'
@@ -355,10 +377,12 @@ jobs:
         if: steps.check-tag.outputs.tag_exists == 'false'
         # SECURITY (H2): the changelog (generated or curated) is untrusted;
         # it is read from the file written by the compose step rather than
-        # interpolated with ${{ ... }} into the shell.
+        # interpolated with ${{ ... }} into the shell. The version and the
+        # last tag are likewise passed via env rather than spliced in.
+        env:
+          VERSION: ${{ steps.get-version.outputs.version }}
+          LAST_TAG: ${{ steps.analyze-changes.outputs.last_tag }}
         run: |
-          VERSION="${{ steps.get-version.outputs.version }}"
-
           echo "## 🚀 RoboSystems v$VERSION Released" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Release URL:** [v$VERSION](https://github.com/RoboFinSystems/robosystems-mcp-client/releases/tag/v$VERSION)" >> $GITHUB_STEP_SUMMARY
@@ -370,7 +394,7 @@ jobs:
           echo "- **Components Updated:** ${{ steps.analyze-changes.outputs.components_changed }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Pages Updated:** ${{ steps.analyze-changes.outputs.pages_changed }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Styles Updated:** ${{ steps.analyze-changes.outputs.styles_changed }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Previous Release:** ${{ steps.analyze-changes.outputs.last_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Previous Release:** ${LAST_TAG}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📝 Changelog" >> $GITHUB_STEP_SUMMARY
           cat /tmp/release_changelog.md >> $GITHUB_STEP_SUMMARY
