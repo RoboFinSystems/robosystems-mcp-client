@@ -57,7 +57,7 @@ jobs:
         env:
           VERSION: ${{ steps.get-version.outputs.version }}
         run: |
-          if [ $(git tag -l "v${VERSION}") ]; then
+          if [ -n "$(git tag -l "v${VERSION}")" ]; then
             echo "tag_exists=true" >> $GITHUB_OUTPUT
             echo "Tag v${VERSION} already exists"
           else
@@ -89,12 +89,10 @@ jobs:
         id: analyze-changes
         # SECURITY (H2): the version originates in package.json — pass it via
         # env rather than splicing it into the script with ${{ ... }}.
-        env:
-          VERSION: ${{ steps.get-version.outputs.version }}
         run: |
-          # Get the last release tag. The pattern is anchored at BOTH ends so
-          # only strict vMAJOR.MINOR.PATCH tags are eligible; a leading-anchor
-          # match would also accept tags that merely start with a version.
+          # Get the last release tag. The pattern is anchored at both ends so only
+          # a strict vMAJOR.MINOR.PATCH tag can be selected: LAST_TAG flows into
+          # later git commands and prompt text, so it must not carry trailing text.
           LAST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
 
           if [ -z "$LAST_TAG" ]; then
@@ -251,14 +249,15 @@ jobs:
               ]
             }')
 
-          # SECURITY: feed the credential header through curl's stdin config
-          # rather than as a command-line argument. Any process on the runner
-          # can read another process's argv, and passing the header as -H
-          # "x-api-key: $ANTHROPIC_API_KEY" would still expose it there — the
-          # shell expands the variable before exec, so the literal value lands
-          # in argv either way. --config - keeps it off argv entirely.
-          RESPONSE=$(printf 'header = "x-api-key: %s"\n' "$ANTHROPIC_API_KEY" | \
-            curl -s --config - --max-time 60 --retry 3 --retry-delay 10 -X POST "https://api.anthropic.com/v1/messages" \
+            # The credential is fed to curl through a config file on stdin rather
+            # than an -H flag. Writing -H "x-api-key: $ANTHROPIC_API_KEY" would not
+            # help: the shell expands the variable before exec, so the literal key
+            # still lands in the curl process argv, which any other process on the
+            # runner can read. printf is a bash builtin, so it adds no process of
+            # its own, and curl parses the config at startup so --retry resends the
+            # header correctly.
+          RESPONSE=$(printf 'header = "x-api-key: %s"\n' "$ANTHROPIC_API_KEY" \
+            | curl -s --config - --max-time 60 --retry 3 --retry-delay 10 -X POST "https://api.anthropic.com/v1/messages" \
               -H "Content-Type: application/json" \
               -H "anthropic-version: 2023-06-01" \
               -d "$PAYLOAD")
