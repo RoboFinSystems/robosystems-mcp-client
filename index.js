@@ -1228,19 +1228,21 @@ async function main() {
   const apiKey = process.env.ROBOSYSTEMS_API_KEY
   const graphId = process.env.ROBOSYSTEMS_GRAPH_ID
 
-  // Proxy mode: forward stdio JSON-RPC straight to the platform's native MCP
-  // endpoint (Streamable HTTP) instead of running the legacy REST bridge.
-  // Activated by ROBOSYSTEMS_MCP_MODE=proxy, a --proxy flag, or by pointing
-  // ROBOSYSTEMS_MCP_URL at a full MCP endpoint URL.
+  // Proxy mode (the default): forward stdio JSON-RPC straight to the
+  // platform's native MCP endpoint (Streamable HTTP) instead of running the
+  // legacy REST bridge. ROBOSYSTEMS_MCP_MODE=legacy opts back into the bridge
+  // (needed only against API deployments predating the MCP transport, or for
+  // the bridge's client-side workspace tools); ROBOSYSTEMS_MCP_URL or a
+  // --proxy flag force proxy mode regardless.
   const mcpUrl = process.env.ROBOSYSTEMS_MCP_URL
-  const proxyMode =
-    Boolean(mcpUrl) ||
-    process.env.ROBOSYSTEMS_MCP_MODE === 'proxy' ||
-    process.argv.includes('--proxy')
+  const legacyMode =
+    !mcpUrl &&
+    !process.argv.includes('--proxy') &&
+    (process.env.ROBOSYSTEMS_MCP_MODE === 'legacy' || process.env.ROBOSYSTEMS_MCP_MODE === 'bridge')
 
-  if (proxyMode) {
+  if (!legacyMode) {
     if (!mcpUrl && !graphId) {
-      console.error('Proxy mode requires ROBOSYSTEMS_MCP_URL or ROBOSYSTEMS_GRAPH_ID')
+      console.error('ROBOSYSTEMS_GRAPH_ID (or a full ROBOSYSTEMS_MCP_URL) is required')
       console.error('Set one of them in your MCP configuration')
       process.exit(1)
     }
