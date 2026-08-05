@@ -5,7 +5,7 @@
 
 Official MCP (Model Context Protocol) stdio bridge for connecting stdio-only AI clients to the RoboSystems Financial Knowledge Graph API. Query financial statements, explore graph structures, resolve XBRL elements, and build fact grids.
 
-> **The preferred way to connect is the hosted remote MCP endpoint — no install required.** Every RoboSystems graph serves the MCP Streamable HTTP transport directly: add `https://api.robosystems.ai/v1/graphs/{graph_id}/mcp` as a connector with your API key in the `X-API-Key` header, and Claude, Claude Code, Cursor, VS Code, or any HTTP-capable MCP client connects with zero setup. **This npx bridge is in maintenance mode** — it remains published and supported for clients that only speak the stdio transport, but new setups should use the remote endpoint. See [Migrating to the remote endpoint](#migrating-to-the-remote-endpoint).
+> **The preferred way to connect is the hosted remote MCP endpoint — no install required.** Every RoboSystems graph serves the MCP Streamable HTTP transport directly: add `https://api.robosystems.ai/v1/graphs/{graph_id}/mcp` as a connector with your API key in the `X-API-Key` header, and Claude Code, Cursor, VS Code, or any HTTP-capable MCP client connects with zero setup. **This npx bridge is in maintenance mode** — it remains published and supported for clients that only speak the stdio transport, but new setups should use the remote endpoint. See [Migrating to the remote endpoint](#migrating-to-the-remote-endpoint).
 
 ## Features
 
@@ -49,13 +49,6 @@ Add to your MCP servers configuration:
 
 If your client supports HTTP transports, replace the npx entry with a direct connection — the URL picks the graph (`sec` for the public SEC repository, your `kg…` graph id for your own; a subgraph id like `kg…_dev` is just another URL), and your account-wide API key goes in the `X-API-Key` header, one connector per graph.
 
-**Claude (claude.ai / Desktop)** — Settings → Connectors → Add custom connector:
-
-```text
-URL:    https://api.robosystems.ai/v1/graphs/sec/mcp
-Header: X-API-Key: <your key>
-```
-
 **Claude Code** — one command:
 
 ```bash
@@ -74,6 +67,8 @@ claude mcp add --transport http robosystems-sec \
 ```
 
 Local development uses the same shape against a local stack: `http://localhost:8000/v1/graphs/{graph_id}/mcp`.
+
+**Claude (claude.ai / Desktop) cannot use the remote endpoint yet** — its custom connectors authenticate with OAuth only and have no custom-header field, so they cannot send an API key. Claude Desktop users should keep using this bridge in `claude_desktop_config.json` (the config file accepts only stdio-shaped `command` entries) until OAuth support lands on the platform.
 
 ## Tools
 
