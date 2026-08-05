@@ -1,3 +1,8 @@
+---
+description: Run the full test and code-quality gate, fixing failures to green.
+argument-hint: '[test-file-or-path]'
+---
+
 Run `npm run test:all` and systematically fix all failures to achieve 100% completion.
 
 ## Timeouts
@@ -41,7 +46,10 @@ For single-layer commands (below), output is short enough that `| tail -30` alon
 ## Notes
 
 - Vitest uses `✓` for pass and `✗`/`×` for fail, plus a `FAIL` prefix for files containing failures.
-- The pre-commit hook runs check-only commands (`format:check`, `lint`, `test`) — if the formatter would have changed a file, the hook fails. Run `npm run format` / `npm run lint:fix` then re-stage.
+- **`test:all` mutates the working tree.** `validate` starts with `validate:fix` (`prettier --write` then `eslint --fix`), so a green run can still leave modified files. Check `git status` afterwards and stage what it rewrote — the pre-commit hook runs check-only commands (`format:check`, `lint`, `test`) and fails on exactly those files.
+- **There is no typecheck and no build.** This is plain JS published as source, so vitest is the only thing standing between a typo and a published release — a `TypeError` on an untested path ships. Weight test coverage accordingly, especially on error and abort paths.
+- **No test touches a live API.** Green means the unit tests pass, not that the bridge works end to end. If a change affects real tool behavior, say whether it was exercised against a running API, and don't report it as verified if it wasn't.
+- The server is a **stdio** process: stdout is the MCP protocol channel. A debug `console.log` added while chasing a test failure will corrupt a real session even though no test catches it — use stderr, and remove it before committing.
 
 ## Goal
 
