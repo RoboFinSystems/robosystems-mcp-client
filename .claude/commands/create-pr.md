@@ -50,12 +50,13 @@ This is the whole point — ground the description in what actually happened:
 
 - **Type** — derive from the branch prefix (`feature/` → feat, `bugfix/`/`fix/` → fix, `hotfix/` → fix, `chore/` → chore, `refactor/` → refactor). Default to `feat` if unprefixed.
 - **Title** — concise (~50–72 chars), conventional-commit style with a scope, matching `git log` (e.g. `feat(tools): add fact-grid tool`, `fix(sse): close pooled connections on abort`).
-- **Body** — markdown. This repo has no `PULL_REQUEST_TEMPLATE.md`, so follow the convention in recent merged PRs (`gh pr list --state merged --limit 10 --json title,body`):
+- **Body** — markdown. **Match the headings in `.github/PULL_REQUEST_TEMPLATE.md`**, because `--body-file` bypasses template prefill entirely and a hand-written body silently drops whatever sections it omits:
   - **Summary** — 1–3 sentences: what this PR does and why.
   - **Changes** — bullets grouped by area: tool definitions, transport/resilience, configuration, tests.
   - **Agent-facing impact** — the section that matters most here. See below.
   - **Testing** — state truthfully what was run. The gate is `npm run test:all` (`validate` → `test`); `npm run test`, `npm run lint`, and `npm run format:check` run standalone. Note the gate has **no typecheck and no build** — this is plain JS — so vitest is the only thing standing between a typo and a published release. If a change affects tool behavior end to end, say whether it was exercised against a live API or only unit-tested. If nothing was run, say "Not run" — never claim passing tests that weren't executed.
-  - **Related Issues** — `Closes #123` / `Fixes #456`, or omit.
+
+  The template has no Related Issues section — put `Closes #123` / `Fixes #456` as the last line of the Summary. GitHub links it from anywhere in the body.
 
 - **Agent-facing impact is a required judgment, not an optional section.** The package is pre-1.0, so the semver ceremony is lighter — but the practical blast radius is _larger_ than an SDK's, because users run `@latest` through `npx` and get the change on their next launch with no lockfile in between. Classify explicitly:
   - **Tool contract** — a tool renamed or removed, its input schema changed, or its response reshaped. Every agent that learned the old shape is affected immediately, and existing conversations can break mid-session. Say it plainly in the body; don't bury it in a bullet.
