@@ -3,7 +3,9 @@
 [![npm version](https://badge.fury.io/js/@robosystems%2Fmcp.svg)](https://www.npmjs.com/package/@robosystems/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Official MCP (Model Context Protocol) server for connecting AI agents to the RoboSystems Financial Knowledge Graph API. Query financial statements, explore graph structures, resolve XBRL elements, and build fact grids — all from Claude Desktop, Claude Code, Cursor, or any MCP-compatible client.
+Official MCP (Model Context Protocol) stdio server for connecting AI agents to the RoboSystems Financial Knowledge Graph API. Query financial statements, explore graph structures, resolve XBRL elements, and build fact grids — all from Claude Desktop, Claude Code, Cursor, or any MCP-compatible client.
+
+> **Connecting from Claude, Claude Code, or Cursor?** The recommended path is the hosted remote MCP endpoint — no install required: add `https://api.robosystems.ai/v1/graphs/{graph_id}/mcp` as a connector with your API key in the `X-API-Key` header. This npx bridge remains fully supported and is the path for stdio-only clients and local development.
 
 ## Features
 
