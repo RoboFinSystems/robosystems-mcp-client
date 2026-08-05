@@ -19,6 +19,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { EventSource } from 'eventsource'
+import { runProxy } from './proxy.js'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -1226,6 +1227,30 @@ async function main() {
   const baseUrl = process.env.ROBOSYSTEMS_API_URL || 'https://api.robosystems.ai'
   const apiKey = process.env.ROBOSYSTEMS_API_KEY
   const graphId = process.env.ROBOSYSTEMS_GRAPH_ID
+
+  // Proxy mode (the default): forward stdio JSON-RPC straight to the
+  // platform's native MCP endpoint (Streamable HTTP) instead of running the
+  // legacy REST bridge. ROBOSYSTEMS_MCP_MODE=legacy opts back into the bridge
+  // (needed only against API deployments predating the MCP transport, or for
+  // the bridge's client-side workspace tools); ROBOSYSTEMS_MCP_URL or a
+  // --proxy flag force proxy mode regardless.
+  const mcpUrl = process.env.ROBOSYSTEMS_MCP_URL
+  const legacyMode =
+    !mcpUrl &&
+    !process.argv.includes('--proxy') &&
+    (process.env.ROBOSYSTEMS_MCP_MODE === 'legacy' || process.env.ROBOSYSTEMS_MCP_MODE === 'bridge')
+
+  if (!legacyMode) {
+    if (!mcpUrl && !graphId) {
+      console.error('ROBOSYSTEMS_GRAPH_ID (or a full ROBOSYSTEMS_MCP_URL) is required')
+      console.error('Set one of them in your MCP configuration')
+      process.exit(1)
+    }
+    const url = mcpUrl || `${baseUrl.replace(/\/$/, '')}/v1/graphs/${graphId}/mcp`
+    void checkForUpdate() // fire-and-forget stale-version warning (stderr only)
+    await runProxy({ url, apiKey, version: PACKAGE_VERSION })
+    return
+  }
 
   if (!apiKey) {
     console.error('ROBOSYSTEMS_API_KEY environment variable is required')
