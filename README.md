@@ -78,7 +78,7 @@ claude mcp add --transport http robosystems-sec \
 
 Local development uses the same shape against a local stack: `http://localhost:8000/v1/graphs/{graph_id}/mcp`.
 
-**Claude (claude.ai / Desktop) cannot use the remote endpoint directly yet** — its custom connectors authenticate with OAuth only and have no custom-header field, so they cannot send an API key. Claude Desktop users should run this package via `claude_desktop_config.json` (the config file accepts only stdio-shaped `command` entries); in its default [proxy mode](#proxy-mode-the-default) it delivers the full remote-endpoint behavior over stdio.
+**Claude (claude.ai / Desktop)** connects with a **connector URL** instead of a header: generate one from your Connect page in the RoboSystems app and paste it into Settings → Connectors → Add custom connector. The URL carries its own graph-scoped, revocable API key, since Claude's custom connectors cannot send custom headers. Claude Desktop can alternatively run this package via `claude_desktop_config.json` (the config file accepts only stdio-shaped `command` entries); in its default [proxy mode](#proxy-mode-the-default) it delivers the same remote-endpoint behavior over stdio.
 
 ## Tools
 
