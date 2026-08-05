@@ -3,9 +3,9 @@
 [![npm version](https://badge.fury.io/js/@robosystems%2Fmcp.svg)](https://www.npmjs.com/package/@robosystems/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Official MCP (Model Context Protocol) stdio server for connecting AI agents to the RoboSystems Financial Knowledge Graph API. Query financial statements, explore graph structures, resolve XBRL elements, and build fact grids — all from Claude Desktop, Claude Code, Cursor, or any MCP-compatible client.
+Official MCP (Model Context Protocol) stdio bridge for connecting stdio-only AI clients to the RoboSystems Financial Knowledge Graph API. Query financial statements, explore graph structures, resolve XBRL elements, and build fact grids.
 
-> **Connecting from Claude, Claude Code, or Cursor?** The recommended path is the hosted remote MCP endpoint — no install required: add `https://api.robosystems.ai/v1/graphs/{graph_id}/mcp` as a connector with your API key in the `X-API-Key` header. This npx bridge remains fully supported and is the path for stdio-only clients and local development.
+> **The preferred way to connect is the hosted remote MCP endpoint — no install required.** Every RoboSystems graph serves the MCP Streamable HTTP transport directly: add `https://api.robosystems.ai/v1/graphs/{graph_id}/mcp` as a connector with your API key in the `X-API-Key` header, and Claude, Claude Code, Cursor, VS Code, or any HTTP-capable MCP client connects with zero setup. **This npx bridge is in maintenance mode** — it remains published and supported for clients that only speak the stdio transport, but new setups should use the remote endpoint. See [Migrating to the remote endpoint](#migrating-to-the-remote-endpoint).
 
 ## Features
 
@@ -44,6 +44,36 @@ Add to your MCP servers configuration:
 | `ROBOSYSTEMS_API_KEY`  | Your API key                             | _(required)_                 |
 | `ROBOSYSTEMS_GRAPH_ID` | Primary graph ID (parent for workspaces) | _(required)_                 |
 | `ROBOSYSTEMS_API_URL`  | API endpoint                             | `https://api.robosystems.ai` |
+
+## Migrating to the Remote Endpoint
+
+If your client supports HTTP transports, replace the npx entry with a direct connection — the URL picks the graph (`sec` for the public SEC repository, your `kg…` graph id for your own; a subgraph id like `kg…_dev` is just another URL), and your account-wide API key goes in the `X-API-Key` header, one connector per graph.
+
+**Claude (claude.ai / Desktop)** — Settings → Connectors → Add custom connector:
+
+```text
+URL:    https://api.robosystems.ai/v1/graphs/sec/mcp
+Header: X-API-Key: <your key>
+```
+
+**Claude Code** — one command:
+
+```bash
+claude mcp add --transport http robosystems-sec \
+  https://api.robosystems.ai/v1/graphs/sec/mcp \
+  --header "X-API-Key: <your key>"
+```
+
+**Cursor / VS Code** — replace the `command`/`args`/`env` entry in `mcp.json` with:
+
+```json
+"robosystems-sec": {
+  "url": "https://api.robosystems.ai/v1/graphs/sec/mcp",
+  "headers": { "X-API-Key": "<your key>" }
+}
+```
+
+Local development uses the same shape against a local stack: `http://localhost:8000/v1/graphs/{graph_id}/mcp`.
 
 ## Tools
 
