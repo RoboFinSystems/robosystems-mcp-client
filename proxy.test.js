@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { Readable } from 'stream'
 import { ReadableStream } from 'stream/web'
 import { TextEncoder } from 'util'
-import { createProxy, runProxy } from './proxy.js'
+import { createProxy, runProxy, redactUrl } from './proxy.js'
 
 const URL = 'https://api.example.com/v1/graphs/kg123/mcp'
 
@@ -221,6 +221,30 @@ describe('createProxy', () => {
   })
 })
 
+describe('redactUrl', () => {
+  it('strips the query string so a ?token= credential never survives', () => {
+    const redacted = redactUrl(`${URL}?token=rfsc-super-secret`)
+    expect(redacted).not.toContain('rfsc-super-secret')
+    expect(redacted).not.toContain('token')
+    expect(redacted).toBe(`${URL}?<redacted>`)
+  })
+
+  it('strips userinfo and fragment', () => {
+    const redacted = redactUrl('https://user:pass@api.example.com/v1/graphs/kg123/mcp#frag')
+    expect(redacted).not.toContain('user')
+    expect(redacted).not.toContain('pass')
+    expect(redacted).not.toContain('frag')
+  })
+
+  it('leaves a credential-free URL readable', () => {
+    expect(redactUrl(URL)).toBe(URL)
+  })
+
+  it('never throws on garbage input', () => {
+    expect(redactUrl('not a url')).toBe('<invalid url>')
+  })
+})
+
 describe('runProxy', () => {
   it('pipes stdin lines through to the endpoint and responses back out', async () => {
     const response = { jsonrpc: '2.0', id: 1, result: { serverInfo: { name: 'robosystems' } } }
@@ -232,5 +256,31 @@ describe('runProxy', () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     expect(output.messages()).toEqual([response])
+  })
+
+  it('never writes a URL-carried token to stderr', async () => {
+    const token = 'rfsc-super-secret-token'
+    const fetchImpl = vi.fn().mockResolvedValue(acceptedResponse())
+    const output = makeOutput()
+    const input = Readable.from(['{"jsonrpc":"2.0","method":"notifications/initialized"}\n'])
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      await runProxy({
+        url: `${URL}?token=${token}`,
+        apiKey: undefined,
+        version: '0.0.0',
+        input,
+        output,
+        fetchImpl,
+      })
+
+      const stderr = errorSpy.mock.calls.flat().join('\n')
+      expect(stderr).not.toContain(token)
+      // The endpoint itself stays legible for debugging.
+      expect(stderr).toContain('api.example.com')
+    } finally {
+      errorSpy.mockRestore()
+    }
   })
 })

@@ -183,6 +183,26 @@ export function createProxy({ url, apiKey, version, output = process.stdout, fet
 }
 
 /**
+ * Strip credentials from a URL before logging it: query string (`?token=…`
+ * connector credentials), fragment, and userinfo. MCP hosts capture stderr
+ * into diagnostic logs that get shared in bug reports — the secret must
+ * never travel with them.
+ */
+export function redactUrl(url) {
+  try {
+    const parsed = new URL(url)
+    parsed.username = ''
+    parsed.password = ''
+    parsed.hash = ''
+    const hadQuery = parsed.search !== ''
+    parsed.search = ''
+    return parsed.toString() + (hadQuery ? '?<redacted>' : '')
+  } catch {
+    return '<invalid url>'
+  }
+}
+
+/**
  * Run the proxy over real stdio until the host closes stdin.
  */
 export async function runProxy({
@@ -196,7 +216,7 @@ export async function runProxy({
   const proxy = createProxy({ url, apiKey, version, output, fetchImpl })
 
   console.error(`RoboSystems MCP proxy v${version}`)
-  console.error(`Forwarding stdio <-> ${url}`)
+  console.error(`Forwarding stdio <-> ${redactUrl(url)}`)
   if (!apiKey) {
     console.error(
       'No ROBOSYSTEMS_API_KEY set — forwarding without an X-API-Key header ' +
