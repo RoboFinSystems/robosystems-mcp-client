@@ -53,7 +53,9 @@ To target a specific endpoint (for example a local stack), point `ROBOSYSTEMS_MC
 
 ### Legacy Bridge Mode
 
-Set `ROBOSYSTEMS_MCP_MODE: "legacy"` to run the original bridge, which aggregates the REST tool endpoints (`GET /mcp/tools` + `POST /mcp/call-tool`) client-side and adds its own workspace-switching tools. You only need this against an API deployment that predates the MCP transport (server versions before v1.7.0), or if you depend on the bridge's client-side `create-workspace`/`switch-workspace` tool names — current servers expose the same capabilities as `create-subgraph`/`switch-workspace` tools natively.
+Set `ROBOSYSTEMS_MCP_MODE: "legacy"` to run the original bridge, which aggregates the REST tool endpoints (`GET /mcp/tools` + `POST /mcp/call-tool`) client-side and adds its own workspace tools. You only need this against an API deployment that predates the MCP transport (server versions before v1.7.0), or if you depend on the bridge's client-side `create-workspace` / `switch-workspace` / `list-workspaces` / `delete-workspace` tool names.
+
+Current servers cover the same ground natively as `create-subgraph`, `list-subgraphs`, `delete-subgraph` and `resolve-subgraph` — note the last one **resolves** rather than switches. A remote connector is anchored to one graph by its URL, so reaching a subgraph means adding its endpoint as its own connector (reusing the same API key), not retargeting the session. The bridge's client-side `switch-workspace` can retarget because it owns a local process; the server has none to retarget.
 
 ## Migrating to the Remote Endpoint
 
@@ -82,7 +84,7 @@ Local development uses the same shape against a local stack: `http://localhost:8
 
 ## Tools
 
-Tools are loaded dynamically from the RoboSystems API based on your graph. In legacy bridge mode the client additionally provides its own workspace management tools (in proxy mode the server serves the equivalent subgraph tools natively).
+Tools are loaded dynamically from the RoboSystems API based on your graph, so the authoritative list is whatever your server advertises. The tables below are the **legacy bridge mode** surface; in proxy mode (the default) the server serves its own subgraph tools instead.
 
 ### Financial Data
 
@@ -106,7 +108,9 @@ Tools are loaded dynamically from the RoboSystems API based on your graph. In le
 | `get-properties`           | Discover available properties on node types                                  |
 | `get-example-queries`      | Query templates and examples for common patterns                             |
 
-### Workspaces
+### Workspaces (legacy bridge mode only)
+
+These are the bridge's own client-side tools, kept for pre-v1.7.0 servers. They have never existed on the server.
 
 | Tool               | Description                                         |
 | ------------------ | --------------------------------------------------- |
@@ -116,6 +120,8 @@ Tools are loaded dynamically from the RoboSystems API based on your graph. In le
 | `delete-workspace` | Remove a workspace and its data                     |
 
 Workspaces let you create isolated subgraphs for experimentation, staging data, or persistent agent memory. Use `subgraph_type: "memory"` when creating a workspace to get a dedicated memory graph.
+
+On a current server (proxy mode) the equivalents are `create-subgraph`, `list-subgraphs`, `delete-subgraph` and `resolve-subgraph`. "Workspace" is deliberately not the server's vocabulary: a subgraph is a lightweight artifact addressed by its own connector URL, not a context the session moves into.
 
 ## Resources
 
