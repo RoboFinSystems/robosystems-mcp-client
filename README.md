@@ -5,15 +5,12 @@
 
 Official MCP (Model Context Protocol) stdio bridge for connecting stdio-only AI clients to the RoboSystems financial intelligence platform. Query financial statements, explore graph structures, resolve XBRL elements, and build fact grids.
 
-> **The preferred way to connect is the hosted remote MCP endpoint — no install required.** Every RoboSystems graph serves the MCP Streamable HTTP transport directly: add `https://api.robosystems.ai/v1/graphs/{graph_id}/mcp` as a connector with your API key in the `X-API-Key` header, and Claude Code, Cursor, VS Code, or any HTTP-capable MCP client connects with zero setup. **This npx package is in maintenance mode** and exists for clients that only speak the stdio transport: by default it runs in [proxy mode](#proxy-mode-the-default), forwarding that same modern transport over stdio. See [Migrating to the remote endpoint](#migrating-to-the-remote-endpoint).
+> **The preferred way to connect is the hosted remote MCP endpoint — no install required.** Every RoboSystems graph serves the MCP Streamable HTTP transport directly. OAuth-capable clients (claude.ai, Claude Code, ChatGPT, VS Code, Cursor) add `https://api.robosystems.ai/v1/mcp`, sign in, and pick the graph on the consent screen; any HTTP-capable client can instead add a per-graph URL `https://api.robosystems.ai/v1/graphs/{graph_id}/mcp` with an API key in the `X-API-Key` header. **This npx package is in maintenance mode** and exists only for clients that speak nothing but the stdio transport: it is a transparent proxy that forwards that same transport over stdio. See [Migrating to the remote endpoint](#migrating-to-the-remote-endpoint).
 
 ## Features
 
-- **Native MCP transport over stdio** — the default proxy mode forwards the graph's Streamable HTTP endpoint verbatim: per-session instructions, live tool lists, and streamed progress notifications, identical to connecting the URL directly
-- **Financial data tools** for statements, disclosures, and multidimensional fact grids
-- **Graph exploration** with Cypher queries, schema introspection, and element resolution
-- **Workspace management** for isolated subgraphs, staging data, and persistent agent memory
-- **Legacy bridge mode** for pre-v1.7.0 servers, with client-side SSE/NDJSON aggregation, smart caching, and retry logic
+- **Native MCP transport over stdio** — a transparent proxy that forwards the graph's Streamable HTTP endpoint verbatim: per-session instructions, live tool lists, and streamed progress notifications, identical to connecting the URL directly
+- **Every server tool, as the server advertises it** — financial statements, disclosures and fact grids; Cypher, schema introspection and element resolution; subgraphs and agent memory on graphs that have them
 
 ## Installation
 
@@ -37,31 +34,30 @@ Add to your MCP servers configuration:
 
 ### Environment Variables
 
-| Variable               | Description                                                        | Default                      |
-| ---------------------- | ------------------------------------------------------------------ | ---------------------------- |
-| `ROBOSYSTEMS_API_KEY`  | Your API key                                                       | _(required)_                 |
-| `ROBOSYSTEMS_GRAPH_ID` | Primary graph ID (parent for workspaces)                           | _(required)_                 |
-| `ROBOSYSTEMS_API_URL`  | API endpoint                                                       | `https://api.robosystems.ai` |
-| `ROBOSYSTEMS_MCP_MODE` | Set to `legacy` to run the old REST-aggregation bridge (see below) | `proxy`                      |
-| `ROBOSYSTEMS_MCP_URL`  | Full MCP endpoint URL — overrides the URL derived from graph ID    | _(derived from graph ID)_    |
+| Variable               | Description                                                     | Default                                          |
+| ---------------------- | --------------------------------------------------------------- | ------------------------------------------------ |
+| `ROBOSYSTEMS_API_KEY`  | Your API key, sent as `X-API-Key`                               | _(required unless the URL carries credentials)_  |
+| `ROBOSYSTEMS_GRAPH_ID` | The graph to connect (derives the per-graph endpoint URL)       | _(required unless `ROBOSYSTEMS_MCP_URL` is set)_ |
+| `ROBOSYSTEMS_API_URL`  | API endpoint                                                    | `https://api.robosystems.ai`                     |
+| `ROBOSYSTEMS_MCP_URL`  | Full MCP endpoint URL — overrides the URL derived from graph ID | _(derived from graph ID)_                        |
 
-### Proxy Mode (the default)
+### How it works
 
 By default this package is a transparent pipe between your stdio client and the graph's native MCP endpoint (`POST /v1/graphs/{graph_id}/mcp`, Streamable HTTP). Every JSON-RPC message is forwarded verbatim, so per-session instructions, the live server tool list, and streamed progress notifications behave exactly as they do when connecting the URL directly — the only thing the proxy adds is the API-key header the stdio client can't send itself. The standard configuration above is all it needs.
 
 To target a specific endpoint (for example a local stack), point `ROBOSYSTEMS_MCP_URL` at the full URL, e.g. `http://localhost:8000/v1/graphs/kg.../mcp` — no graph ID needed.
 
-### Legacy Bridge Mode
-
-Set `ROBOSYSTEMS_MCP_MODE: "legacy"` to run the original bridge, which aggregates the REST tool endpoints (`GET /mcp/tools` + `POST /mcp/call-tool`) client-side and adds its own workspace tools. You only need this against an API deployment that predates the MCP transport (server versions before v1.7.0), or if you depend on the bridge's client-side `create-workspace` / `switch-workspace` / `list-workspaces` / `delete-workspace` tool names.
-
-Current servers cover the same ground natively as `create-subgraph`, `list-subgraphs`, `delete-subgraph` and `resolve-subgraph` — note the last one **resolves** rather than switches. A remote connector is anchored to one graph by its URL, so reaching a subgraph means adding its endpoint as its own connector (reusing the same API key), not retargeting the session. The bridge's client-side `switch-workspace` can retarget because it owns a local process; the server has none to retarget.
-
 ## Migrating to the Remote Endpoint
 
 If your client supports HTTP transports, replace the npx entry with a direct connection — the URL picks the graph (`sec` for the public SEC repository, your `kg…` graph id for your own; a subgraph id like `kg…_dev` is just another URL), and your account-wide API key goes in the `X-API-Key` header, one connector per graph.
 
-**Claude Code** — one command:
+**OAuth — sign in and pick a graph** (claude.ai, Claude Code, ChatGPT, VS Code, Cursor): add the graph-agnostic endpoint and no key at all; the consent screen is where you choose the graph.
+
+```bash
+claude mcp add --transport http robosystems https://api.robosystems.ai/v1/mcp
+```
+
+**Claude Code with an API key** — one command:
 
 ```bash
 claude mcp add --transport http robosystems-sec \
@@ -84,7 +80,7 @@ Local development uses the same shape against a local stack: `http://localhost:8
 
 ## Tools
 
-Tools are loaded dynamically from the RoboSystems API based on your graph, so the authoritative list is whatever your server advertises. The tables below are the **legacy bridge mode** surface; in proxy mode (the default) the server serves its own subgraph tools instead.
+Tools are loaded dynamically from the RoboSystems API based on your graph, so the authoritative list is whatever your server advertises — the proxy adds nothing of its own. The tables below are representative.
 
 ### Financial Data
 
@@ -108,26 +104,11 @@ Tools are loaded dynamically from the RoboSystems API based on your graph, so th
 | `get-properties`           | Discover available properties on node types                                  |
 | `get-example-queries`      | Query templates and examples for common patterns                             |
 
-### Workspaces (legacy bridge mode only)
-
-These are the bridge's own client-side tools, kept for pre-v1.7.0 servers. They have never existed on the server.
-
-| Tool               | Description                                         |
-| ------------------ | --------------------------------------------------- |
-| `create-workspace` | Create an isolated subgraph (static or memory type) |
-| `switch-workspace` | Switch active workspace context                     |
-| `list-workspaces`  | List all workspaces with active indicator           |
-| `delete-workspace` | Remove a workspace and its data                     |
-
-Workspaces let you create isolated subgraphs for experimentation, staging data, or persistent agent memory. Use `subgraph_type: "memory"` when creating a workspace to get a dedicated memory graph.
-
-On a current server (proxy mode) the equivalents are `create-subgraph`, `list-subgraphs`, `delete-subgraph` and `resolve-subgraph`. "Workspace" is deliberately not the server's vocabulary: a subgraph is a lightweight artifact addressed by its own connector URL, not a context the session moves into.
-
 ## Resources
 
 - [RoboSystems Platform](https://robosystems.ai)
 - [GitHub Repository](https://github.com/RoboFinSystems/robosystems)
-- [MCP API Documentation](https://api.robosystems.ai/docs#tag/MCP)
+- [API Documentation](https://api.robosystems.ai/docs)
 - [OpenAPI Specification](https://api.robosystems.ai/openapi.json)
 
 ## Support
