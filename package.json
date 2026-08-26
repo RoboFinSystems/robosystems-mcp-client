@@ -1,6 +1,6 @@
 {
   "name": "@robosystems/mcp",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "MCP stdio bridge connecting stdio-only AI clients to the RoboSystems financial intelligence platform; proxies to the hosted remote MCP endpoint by default",
   "type": "module",
   "main": "index.js",
