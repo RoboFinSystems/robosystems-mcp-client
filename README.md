@@ -36,7 +36,7 @@ Add to your MCP servers configuration:
 
 | Variable               | Description                                                     | Default                                          |
 | ---------------------- | --------------------------------------------------------------- | ------------------------------------------------ |
-| `ROBOSYSTEMS_API_KEY`  | Your API key, sent as `X-API-Key`                               | _(required unless the URL carries credentials)_  |
+| `ROBOSYSTEMS_API_KEY`  | Your API key, sent as `X-API-Key`                               | _(required)_                                     |
 | `ROBOSYSTEMS_GRAPH_ID` | The graph to connect (derives the per-graph endpoint URL)       | _(required unless `ROBOSYSTEMS_MCP_URL` is set)_ |
 | `ROBOSYSTEMS_API_URL`  | API endpoint                                                    | `https://api.robosystems.ai`                     |
 | `ROBOSYSTEMS_MCP_URL`  | Full MCP endpoint URL — overrides the URL derived from graph ID | _(derived from graph ID)_                        |
@@ -76,7 +76,7 @@ claude mcp add --transport http robosystems-sec \
 
 Local development uses the same shape against a local stack: `http://localhost:8000/v1/graphs/{graph_id}/mcp`.
 
-**Claude (claude.ai / Desktop)** connects with a **connector URL** instead of a header: generate one from the MCP page in the RoboSystems app (`/connect`) and paste it into Settings → Connectors → Add custom connector. The URL carries its own graph-scoped, revocable API key, since Claude's custom connectors cannot send custom headers. Claude Desktop can alternatively run this package via `claude_desktop_config.json` (the config file accepts only stdio-shaped `command` entries); in its default [proxy mode](#proxy-mode-the-default) it delivers the same remote-endpoint behavior over stdio.
+**Claude (claude.ai / Desktop)** — Settings → Connectors → Add custom connector with `https://api.robosystems.ai/v1/mcp` (or a per-graph URL): Claude detects OAuth and you pick the graph at sign-in; no key involved. Credentials never travel in the URL — the older `?token=` connector URL was the bridge to OAuth and has been retired. Claude Desktop can alternatively run this package via `claude_desktop_config.json` (the config file accepts only stdio-shaped `command` entries); in its default [proxy mode](#proxy-mode-the-default) it delivers the same remote-endpoint behavior over stdio with the key in a header.
 
 ## Tools
 
