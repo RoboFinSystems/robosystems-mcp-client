@@ -40,8 +40,7 @@
   "author": "RFS LLC",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.17.1",
-    "eventsource": "^4.0.0"
+    "@modelcontextprotocol/sdk": "^1.17.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
