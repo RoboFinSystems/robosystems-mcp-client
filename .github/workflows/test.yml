@@ -12,6 +12,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
+    # Only reads the repo; npm install runs arbitrary postinstall scripts, so
+    # keep the token scoped down regardless of the org-wide default.
+    permissions:
+      contents: read
+
     # 22 is the oldest Node still in support; 24 is the LTS the consuming
     # apps now run on. Testing only the newest would leave consumers on 22
     # unverified. Node 18 is omitted despite engines.node — it went EOL in

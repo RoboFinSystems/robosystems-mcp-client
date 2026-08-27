@@ -16,6 +16,12 @@ on:
 jobs:
   create-release:
     runs-on: ubuntu-latest
+
+    # Pushes the version commit to main and creates the release branch. Needed
+    # for the `|| github.token` fallback when ACTIONS_TOKEN is unset.
+    permissions:
+      contents: write
+
     outputs:
       new_version: ${{ steps.new-version.outputs.new_version }}
       branch_name: ${{ steps.new-version.outputs.branch_name }}
@@ -130,6 +136,9 @@ jobs:
     needs: [create-release, create-tag]
     if: always()
     runs-on: ubuntu-latest
+
+    # Only writes to $GITHUB_STEP_SUMMARY; needs no token scopes at all.
+    permissions: {}
     steps:
       - name: Create summary
         run: |
