@@ -127,9 +127,11 @@ jobs:
     needs: create-release
     permissions:
       contents: write
-    uses: ./.github/workflows/tag-release.yml
+    uses: RoboFinSystems/robosystems/.github/workflows/tag-release.yml@main
     with:
       branch_ref: ${{ needs.create-release.outputs.branch_name }}
+      product_name: 'RoboSystems MCP Client'
+      project_kind: 'MCP client SDK'
     secrets: inherit
 
   create-summary:
