@@ -35,6 +35,16 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      # The npm that ships with a Node version is not what we are testing, and
+      # this repo commits no lockfile, so every run resolves from the live
+      # registry. npm 10 (bundled with Node 22) crashes resolving vitest 4.1+
+      # with "Cannot read properties of null (reading 'edgesOut')"; npm 11
+      # resolves the same tree. Installing npm 11 first keeps the Node 22
+      # runtime under test without pinning a test dependency to work around a
+      # package-manager bug.
+      - name: Upgrade npm
+        run: npm install -g npm@11
+
       - name: Install Dependencies
         run: npm install
 
