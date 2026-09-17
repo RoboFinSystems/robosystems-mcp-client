@@ -114,7 +114,7 @@ Tools are loaded dynamically from the RoboSystems API based on your graph, so th
 ## Support
 
 - [Issues](https://github.com/RoboFinSystems/robosystems-mcp-client/issues)
-- [Wiki](https://github.com/RoboFinSystems/robosystems/wiki)
+- [Documentation](https://robosystems.ai/docs/technical)
 - [Projects](https://github.com/orgs/RoboFinSystems/projects)
 - [Discussions](https://github.com/orgs/RoboFinSystems/discussions)
 
