@@ -108,7 +108,7 @@ Tools are loaded dynamically from the RoboSystems API based on your graph, so th
 
 - [RoboSystems Platform](https://robosystems.ai)
 - [GitHub Repository](https://github.com/RoboFinSystems/robosystems)
-- [API Documentation](https://api.robosystems.ai/docs)
+- [API Reference](https://robosystems.ai/docs/api)
 - [OpenAPI Specification](https://api.robosystems.ai/openapi.json)
 
 ## Support
