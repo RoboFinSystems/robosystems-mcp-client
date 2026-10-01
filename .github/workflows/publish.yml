@@ -8,7 +8,7 @@ on:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # The production environment's protection rules (required reviewer,
     # deployment branches) gate every publish here.
     environment: production
