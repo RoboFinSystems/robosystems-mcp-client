@@ -7,12 +7,13 @@ Monitor a release and publish run — pinpoint why it failed, and confirm the ve
 
 ## How a release actually happens here
 
-Two workflows, and the trigger between them is the part that surprises people:
+One workflow, `create-release.yml` (`workflow_dispatch`, or `npm run release:create`), with three jobs in sequence:
 
-1. **`create-release.yml`** (`workflow_dispatch`, or `npm run release:create`) — reads the current version from `package.json`, computes the next one from the requested bump, commits the bump **to `main`**, cuts `release/<version>` from that commit, and tags it.
-2. **`publish.yml`** — triggered by **a push to `release/**`**, not by a merge and not by the tag. It reads the version from `package.json`, checks whether that version already exists on npm, and if not, publishes with `npm publish --provenance --access public` over OIDC trusted publishing.
+1. **`create-release`** — reads the current version from `package.json`, computes the next one from the requested bump, commits the bump **to `main`**, and cuts `release/<version>` from that commit.
+2. **`create-tag`** — `tag-release.yml` tags that branch and cuts the GitHub Release.
+3. **`publish`** — runs once the tag exists, under the `production` environment, so its required-reviewer prompt lands on this same run. It checks out the tag, verifies the version is the one just cut, checks whether that version already exists on npm, and if not, publishes with `npm publish --provenance --access public` over OIDC trusted publishing. npm's trusted publisher is registered against `create-release.yml` and the `production` environment.
 
-So: **merging a PR to `main` publishes nothing.** The release branch push is the publishing event. And because `publish.yml` short-circuits when the version already exists on npm, a re-run of a successful publish is a no-op rather than an error — useful, but it also means "the run went green" is not by itself proof that _this_ run published anything.
+So: **merging a PR to `main` publishes nothing.** Dispatching the workflow is the publishing event, and nothing uploads until the deployment is approved on the run page. A failed publish is retried with **Re-run failed jobs** on that run — the version and tag are already cut, and a new release is warranted only when the code itself is at fault. Because the job short-circuits when the version already exists on npm, a re-run after a successful publish is a no-op rather than an error — useful, but it also means "the run went green" is not by itself proof that _this_ run published anything.
 
 `tag-release.yml` writes the GitHub release body separately; see `/release-notes` for the curated-notes override.
 
@@ -26,7 +27,6 @@ So: **merging a PR to `main` publishes nothing.** The release branch push is the
 ## 1. Find the run
 
 ```bash
-gh run list --workflow=publish.yml --limit 5
 gh run list --workflow=create-release.yml --limit 5
 gh run view <run-id>
 gh run watch <run-id>            # live, if it's in flight
@@ -42,9 +42,11 @@ Classify by stage:
 
 - **`create-release.yml` — branch already exists.** The workflow checks for `release/<version>` before creating it. A failure here usually means a previous run got partway, and the fix is to resolve the leftover branch, not to re-dispatch blindly.
 - **`create-release.yml` — push to `main` rejected.** The version bump commits directly to a protected branch and needs `ACTIONS_TOKEN`; a permissions failure here looks like an auth error at the push step.
-- **`publish.yml` — "already published".** Not a failure. The version exists on npm, so every subsequent step is skipped by condition. Read it as "nothing to do," and if you expected a publish, the version wasn't bumped.
-- **`publish.yml` — install.** `npm install` only; there is no build step, because the published artifact is the source. A failure here is a dependency or registry problem, not a code problem.
-- **`publish.yml` — `npm publish`.** OIDC trusted publishing with provenance. Failures are usually the npm-side trust configuration or a version/name mismatch, not the code.
+- **`publish` — waiting.** The job is paused on the `production` environment's required reviewer. Nothing is wrong; approve it from the run page (_Review deployments_).
+- **`publish` — "checked out version X, expected Y".** The tag the job checked out does not carry the version this run cut. Nothing was published; look at what `create-tag` tagged.
+- **`publish` — "already published".** Not a failure. The version exists on npm, so every subsequent step is skipped by condition. Read it as "nothing to do," and if you expected a publish, the version wasn't bumped.
+- **`publish` — install.** `npm install` only; there is no build step, because the published artifact is the source. A failure here is a dependency or registry problem, not a code problem.
+- **`publish` — `npm publish`.** OIDC trusted publishing with provenance. Failures are usually the npm-side trust configuration (the publisher must name `create-release.yml`) or a version/name mismatch, not the code.
 
 ## 3. Verify it actually landed
 
@@ -75,6 +77,6 @@ If the release changed the tool contract, users don't adopt it — it adopts the
 
 ## Output
 
-A short status: which workflow, what failed and at which step, the root cause, the re-run link if any, and the verified published version from `npm view`. If nothing failed, say so — don't manufacture work.
+A short status: which job, what failed and at which step, the root cause, the re-run link if any, and the verified published version from `npm view`. If nothing failed, say so — don't manufacture work.
 
 $ARGUMENTS

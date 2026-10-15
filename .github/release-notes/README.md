@@ -9,11 +9,11 @@ To override it, commit the notes here as `v<version>.md` **before** dispatching
 `create-release.yml`. The file has to exist at the tagged ref, and
 `create-release.yml` bumps the version on `main`, cuts `release/<version>` from
 the result, and tags it in the same run — so the notes must be merged to `main`
-before the dispatch, not added to the release branch afterwards. Pushing that
-release branch is also what triggers `publish.yml`, so the notes are fixed by
-the time the package reaches npm. When the file is present the workflow uses it
-verbatim and skips the generated changelog, the release-statistics section, and
-the generated-with footer.
+before the dispatch, not added to the release branch afterwards. The same run
+then publishes from that tag, so the notes are fixed by the time the package
+reaches npm. When the file is present the workflow uses it verbatim and skips
+the generated changelog, the release-statistics section, and the generated-with
+footer.
 
 No file, no change: the release falls back to the generated changelog. Skipping
 a release is a normal outcome, not a failure.
