@@ -134,8 +134,91 @@ jobs:
       project_kind: 'MCP client SDK'
     secrets: inherit
 
-  create-summary:
+  # npm's trusted publisher is pinned to this workflow file and the production
+  # environment, whose protection rules (required reviewer, deployment
+  # branches) gate every publish. The approval prompt lands on this run.
+  publish:
     needs: [create-release, create-tag]
+    runs-on: ubuntu-24.04
+    environment: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.create-tag.outputs.tag_name }}
+
+      - name: Get version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+
+      - name: Verify the checkout is the released version
+        run: |
+          EXPECTED="${{ needs.create-release.outputs.new_version }}"
+          ACTUAL="${{ steps.version.outputs.version }}"
+
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "❌ Checked out version $ACTUAL, expected $EXPECTED"
+            exit 1
+          fi
+          echo "✅ Checked out the released version $ACTUAL"
+
+      - name: Check if already published
+        id: check-published
+        run: |
+          # Check if this version is already published to npm
+          if npm view @robosystems/mcp@${{ steps.version.outputs.version }} version 2>/dev/null; then
+            echo "already_published=true" >> $GITHUB_OUTPUT
+            echo "Version ${{ steps.version.outputs.version }} is already published"
+          else
+            echo "already_published=false" >> $GITHUB_OUTPUT
+            echo "Version ${{ steps.version.outputs.version }} is not yet published"
+          fi
+
+      - name: Setup Node.js
+        if: steps.check-published.outputs.already_published == 'false'
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+        env:
+          NODE_AUTH_TOKEN: ''  # Clear default token to use OIDC
+
+      - name: Upgrade npm for OIDC support
+        if: steps.check-published.outputs.already_published == 'false'
+        run: |
+          npm install -g npm@11
+          npm --version
+
+      - name: Install dependencies
+        if: steps.check-published.outputs.already_published == 'false'
+        run: npm install
+
+      - name: Publish to npm
+        if: steps.check-published.outputs.already_published == 'false'
+        run: npm publish --provenance --access public
+
+      - name: Create summary
+        if: steps.check-published.outputs.already_published == 'false'
+        run: |
+          echo "## 📦 Published to npm" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Package:** [@robosystems/mcp](https://www.npmjs.com/package/@robosystems/mcp)" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** v${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Installation" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "npm install @robosystems/mcp@${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  create-summary:
+    needs: [create-release, create-tag, publish]
     if: always()
     runs-on: ubuntu-24.04
 
@@ -150,10 +233,11 @@ jobs:
           echo "**Tag:** \`${{ needs.create-tag.outputs.tag_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** \`${{ needs.create-release.outputs.branch_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Type:** ${{ inputs.version_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Publish:** ${{ needs.publish.result }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Release URL:** ${{ needs.create-tag.outputs.release_url }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "The npm package will be automatically published when the release tag is created." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Monitor the publish workflow: [View Workflows](https://github.com/RoboFinSystems/robosystems-mcp-client/actions/workflows/publish.yml)" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.publish.result }}" != "success" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The version and tag are cut but the package is not on npm. Fix the cause, then **Re-run failed jobs** on this run; a new release is only needed when the code itself is at fault." >> $GITHUB_STEP_SUMMARY
+          fi

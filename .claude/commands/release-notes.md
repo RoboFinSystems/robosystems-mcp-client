@@ -59,6 +59,6 @@ Write `.github/release-notes/v<version>.md` — **body only**:
 
 ### 6. Hand off — sequencing matters
 
-The file must exist **at the tagged ref**, and there is no window to add it late: `create-release.yml` bumps the version on `main`, cuts `release/<version>` from the result, and tags it in the same run. Pushing that release branch is also what triggers `publish.yml`, so by the time the package is on npm the notes are already fixed. They have to be **merged into `main` before the workflow is dispatched**.
+The file must exist **at the tagged ref**, and there is no window to add it late: `create-release.yml` bumps the version on `main`, cuts `release/<version>` from the result, and tags it in the same run. The same run then publishes from that tag, so by the time the package is on npm the notes are already fixed. They have to be **merged into `main` before the workflow is dispatched**.
 
 Write the draft on a feature branch (created via `npm run feature:create`), never on `main`. Present it for review and leave the merge and the dispatch to the user.

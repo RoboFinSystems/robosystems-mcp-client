@@ -49,7 +49,7 @@ This is where the real bugs are:
 
 - New environment variables need to appear in the README's configuration block; an undocumented one may as well not exist, since users configure this through a JSON snippet they copy.
 - Changes to `package.json` `bin`/`files`, the shebang, or the Node version expectation affect whether `npx` can launch it at all. A failure here is total: the server never starts and the user sees only a broken connector.
-- Never stage a `package.json` version bump in a feature branch: `create-release.yml` owns the bump on `main`, and pushing `release/**` is what triggers `publish.yml`.
+- Never stage a `package.json` version bump in a feature branch: `create-release.yml` owns the bump on `main` and publishes from the tag it cuts.
 
 ## Testing
 
