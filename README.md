@@ -43,7 +43,7 @@ Add to your MCP servers configuration:
 
 ### How it works
 
-By default this package is a transparent pipe between your stdio client and the graph's native MCP endpoint (`POST /v1/graphs/{graph_id}/mcp`, Streamable HTTP). Every JSON-RPC message is forwarded verbatim, so per-session instructions, the live server tool list, and streamed progress notifications behave exactly as they do when connecting the URL directly — the only thing the proxy adds is the API-key header the stdio client can't send itself. The standard configuration above is all it needs.
+This package is a transparent pipe between your stdio client and the graph's native MCP endpoint (`POST /v1/graphs/{graph_id}/mcp`, Streamable HTTP). Every JSON-RPC message is forwarded verbatim, so per-session instructions, the live server tool list, and streamed progress notifications behave exactly as they do when connecting the URL directly — the only thing the proxy adds is the API-key header the stdio client can't send itself. The standard configuration above is all it needs.
 
 To target a specific endpoint (for example a local stack), point `ROBOSYSTEMS_MCP_URL` at the full URL, e.g. `http://localhost:8000/v1/graphs/kg.../mcp` — no graph ID needed.
 
@@ -76,7 +76,7 @@ claude mcp add --transport http robosystems-sec \
 
 Local development uses the same shape against a local stack: `http://localhost:8000/v1/graphs/{graph_id}/mcp`.
 
-**Claude (claude.ai / Desktop)** — Settings → Connectors → Add custom connector with `https://api.robosystems.ai/v1/mcp` (or a per-graph URL): Claude detects OAuth and you pick the graph at sign-in; no key involved. Credentials never travel in the URL — the older `?token=` connector URL was the bridge to OAuth and has been retired. Claude Desktop can alternatively run this package via `claude_desktop_config.json` (the config file accepts only stdio-shaped `command` entries); in its default [proxy mode](#proxy-mode-the-default) it delivers the same remote-endpoint behavior over stdio with the key in a header.
+**Claude (claude.ai / Desktop)** — Settings → Connectors → Add custom connector with `https://api.robosystems.ai/v1/mcp` (or a per-graph URL): Claude detects OAuth and you pick the graph at sign-in; no key involved. Credentials never travel in the URL — the older `?token=` connector URL was the bridge to OAuth and has been retired. Claude Desktop can alternatively run this package via `claude_desktop_config.json` (the config file accepts only stdio-shaped `command` entries); in its default [proxy mode](#how-it-works) it delivers the same remote-endpoint behavior over stdio with the key in a header.
 
 ## Tools
 
@@ -84,25 +84,23 @@ Tools are loaded dynamically from the RoboSystems API based on your graph, so th
 
 ### Financial Data
 
-| Tool                      | Description                                                                                      |
-| ------------------------- | ------------------------------------------------------------------------------------------------ |
-| `get-financial-statement` | Retrieve structured financial statements (income, balance sheet, cash flow) by ticker and period |
-| `list-disclosures`        | List available disclosure types with counts, optionally filtered by ticker                       |
-| `get-disclosure-detail`   | Get facts for a specific disclosure type                                                         |
-| `build-fact-grid`         | Construct multidimensional fact grids from graph data for analysis                               |
+| Tool                           | Description                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------------ |
+| `financial-statement-analysis` | A company's financial statements, by ticker or CIK and reporting period        |
+| `disclosures`                  | The map of a report's sections: one row per note or statement                  |
+| `information-block`            | One section read whole: rows, breakdowns, calculation footing, and text blocks |
+| `build-fact-grid`              | Construct multidimensional fact grids from graph data for analysis             |
 
 ### Graph Exploration
 
-| Tool                       | Description                                                                  |
-| -------------------------- | ---------------------------------------------------------------------------- |
-| `execute-cypher`           | Run Cypher queries against the knowledge graph with validation and streaming |
-| `get-graph-schema`         | Introspect node types, relationships, and properties                         |
-| `describe-graph-structure` | Explore graph structure and relationship patterns                            |
-| `get-graph-info`           | Graph metadata and statistics                                                |
-| `resolve-element`          | Map financial concepts (e.g. "revenue") to XBRL element qnames               |
-| `resolve-structure`        | Find financial statement structures by type                                  |
-| `get-properties`           | Discover available properties on node types                                  |
-| `get-example-queries`      | Query templates and examples for common patterns                             |
+| Tool                  | Description                                                    |
+| --------------------- | -------------------------------------------------------------- |
+| `read-graph-cypher`   | Run read-only Cypher queries against the knowledge graph       |
+| `get-graph-schema`    | Introspect node types, relationships, and properties           |
+| `get-graph-info`      | Graph metadata and statistics                                  |
+| `resolve-element`     | Map financial concepts (e.g. "revenue") to XBRL element qnames |
+| `search-documents`    | Find which filings or documents discuss something              |
+| `get-example-queries` | Query templates and examples for common patterns               |
 
 ## Resources
 
