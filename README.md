@@ -3,18 +3,28 @@
 [![npm version](https://badge.fury.io/js/@robosystems%2Fmcp.svg)](https://www.npmjs.com/package/@robosystems/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-The official MCP (Model Context Protocol) stdio bridge for RoboSystems, the open-source knowledge graph for finance; it proxies to the hosted endpoint by default, for AI clients that speak only stdio. Query financial statements, explore graph structures, resolve XBRL elements, and build fact grids.
+**The stdio bridge to the MCP server of [RoboSystems](https://github.com/RoboFinSystems/robosystems), the open-source knowledge graph for finance.** Every graph is an MCP server over the Streamable HTTP transport; `@robosystems/mcp` connects MCP clients without HTTP transport to it. It is in maintenance mode.
 
-> **The preferred way to connect is the hosted remote MCP endpoint — no install required.** Every RoboSystems graph serves the MCP Streamable HTTP transport directly. OAuth-capable clients (claude.ai, Claude Code, ChatGPT, VS Code, Cursor) add `https://api.robosystems.ai/v1/mcp`, sign in, and pick the graph on the consent screen; any HTTP-capable client can instead add a per-graph URL `https://api.robosystems.ai/v1/graphs/{graph_id}/mcp` with an API key in the `X-API-Key` header. **This npx package is in maintenance mode** and exists only for clients that speak nothing but the stdio transport: it is a transparent proxy that forwards that same transport over stdio. See [Migrating to the remote endpoint](#migrating-to-the-remote-endpoint).
+The bridge reads JSON-RPC messages from stdin, posts each one unchanged to a graph's MCP endpoint with your API key in the `X-API-Key` header, and writes the replies to stdout. The instructions, tools and progress notifications are the server's own; the bridge adds none. Diagnostics go to stderr, including a notice at startup when a newer version is on npm.
 
-## Features
+## Connect directly if you can
 
-- **Native MCP transport over stdio** — a transparent proxy that forwards the graph's Streamable HTTP endpoint verbatim: per-session instructions, live tool lists, and streamed progress notifications, identical to connecting the URL directly
-- **Every server tool, as the server advertises it** — financial statements, disclosures and fact grids; Cypher, schema introspection and element resolution; subgraphs and agent memory on graphs that have them
+An MCP client with HTTP transport does not need this package. Connect it to the hosted server instead:
 
-## Installation
+- **OAuth**: `https://api.robosystems.ai/v1/mcp`. Sign in and choose the graph on the consent screen. `https://api.robosystems.ai/v1/mcp/roboledger` is the same for RoboLedger graphs, with the accounting tools only
+- **API key**: `https://api.robosystems.ai/v1/graphs/{graph_id}/mcp`, with the key in the `X-API-Key` header and never in the URL. The URL picks the graph: `sec` for the public SEC repository, your graph id for your own
 
-Add to your MCP servers configuration:
+```bash
+claude mcp add --transport http robosystems-sec \
+  https://api.robosystems.ai/v1/graphs/sec/mcp \
+  --header "X-API-Key: <your key>"
+```
+
+The app's MCP page has the snippet for each client. The bridge authenticates with an API key only, so it connects to a per-graph URL, never to the OAuth endpoints.
+
+## Install
+
+No install step: MCP clients run it through `npx`. Tested on Node.js 22, 24 and 26.
 
 ```json
 {
@@ -23,98 +33,39 @@ Add to your MCP servers configuration:
       "command": "npx",
       "args": ["-y", "@robosystems/mcp@latest"],
       "env": {
-        "ROBOSYSTEMS_API_URL": "https://api.robosystems.ai",
-        "ROBOSYSTEMS_API_KEY": "rfs...",
-        "ROBOSYSTEMS_GRAPH_ID": "kg..."
+        "ROBOSYSTEMS_API_KEY": "<your key>",
+        "ROBOSYSTEMS_GRAPH_ID": "sec"
       }
     }
   }
 }
 ```
 
-### Environment Variables
+This is the shape of `claude_desktop_config.json` and of other clients that take stdio `command` entries. Keep `@latest` in the arguments: a global `npm install -g @robosystems/mcp` can shadow `npx` and pin an old version.
 
-| Variable               | Description                                                     | Default                                          |
-| ---------------------- | --------------------------------------------------------------- | ------------------------------------------------ |
-| `ROBOSYSTEMS_API_KEY`  | Your API key, sent as `X-API-Key`                               | _(required)_                                     |
-| `ROBOSYSTEMS_GRAPH_ID` | The graph to connect (derives the per-graph endpoint URL)       | _(required unless `ROBOSYSTEMS_MCP_URL` is set)_ |
-| `ROBOSYSTEMS_API_URL`  | API endpoint                                                    | `https://api.robosystems.ai`                     |
-| `ROBOSYSTEMS_MCP_URL`  | Full MCP endpoint URL — overrides the URL derived from graph ID | _(derived from graph ID)_                        |
+## Configuration
 
-### How it works
+The bridge reads four environment variables and takes no command-line arguments.
 
-This package is a transparent pipe between your stdio client and the graph's native MCP endpoint (`POST /v1/graphs/{graph_id}/mcp`, Streamable HTTP). Every JSON-RPC message is forwarded verbatim, so per-session instructions, the live server tool list, and streamed progress notifications behave exactly as they do when connecting the URL directly — the only thing the proxy adds is the API-key header the stdio client can't send itself. The standard configuration above is all it needs.
+| Variable               | Purpose                                                                                                                   | Default                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `ROBOSYSTEMS_API_KEY`  | API key, sent as `X-API-Key`; account-wide or scoped to one graph                                                         | none                         |
+| `ROBOSYSTEMS_GRAPH_ID` | The graph to connect: `sec`, a graph id, or a subgraph id such as `kg…_dev`. Required unless `ROBOSYSTEMS_MCP_URL` is set | none                         |
+| `ROBOSYSTEMS_API_URL`  | Base URL the endpoint is derived from: `{ROBOSYSTEMS_API_URL}/v1/graphs/{ROBOSYSTEMS_GRAPH_ID}/mcp`                       | `https://api.robosystems.ai` |
+| `ROBOSYSTEMS_MCP_URL`  | Full endpoint URL. Overrides the derived one, and needs no graph id                                                       | derived                      |
 
-To target a specific endpoint (for example a local stack), point `ROBOSYSTEMS_MCP_URL` at the full URL, e.g. `http://localhost:8000/v1/graphs/kg.../mcp` — no graph ID needed.
+For a self-hosted stack, set `ROBOSYSTEMS_API_URL` to its address (`http://localhost:8000` in local development), or point `ROBOSYSTEMS_MCP_URL` at the full per-graph URL. See [Authentication & API Keys](https://robosystems.ai/docs/technical/authentication-and-api-keys) and [Self-Hosting on a Server](https://robosystems.ai/docs/technical/self-hosting-on-a-server).
 
-## Migrating to the Remote Endpoint
+## Documentation
 
-If your client supports HTTP transports, replace the npx entry with a direct connection — the URL picks the graph (`sec` for the public SEC repository, your `kg…` graph id for your own; a subgraph id like `kg…_dev` is just another URL), and your account-wide API key goes in the `X-API-Key` header, one connector per graph.
-
-**OAuth — sign in and pick a graph** (claude.ai, Claude Code, ChatGPT, VS Code, Cursor): add the graph-agnostic endpoint and no key at all; the consent screen is where you choose the graph.
-
-```bash
-claude mcp add --transport http robosystems https://api.robosystems.ai/v1/mcp
-```
-
-**Claude Code with an API key** — one command:
-
-```bash
-claude mcp add --transport http robosystems-sec \
-  https://api.robosystems.ai/v1/graphs/sec/mcp \
-  --header "X-API-Key: <your key>"
-```
-
-**Cursor / VS Code** — replace the `command`/`args`/`env` entry in `mcp.json` with:
-
-```json
-"robosystems-sec": {
-  "url": "https://api.robosystems.ai/v1/graphs/sec/mcp",
-  "headers": { "X-API-Key": "<your key>" }
-}
-```
-
-Local development uses the same shape against a local stack: `http://localhost:8000/v1/graphs/{graph_id}/mcp`.
-
-**Claude (claude.ai / Desktop)** — Settings → Connectors → Add custom connector with `https://api.robosystems.ai/v1/mcp` (or a per-graph URL): Claude detects OAuth and you pick the graph at sign-in; no key involved. Credentials never travel in the URL — the older `?token=` connector URL was the bridge to OAuth and has been retired. Claude Desktop can alternatively run this package via `claude_desktop_config.json` (the config file accepts only stdio-shaped `command` entries); in its default [proxy mode](#how-it-works) it delivers the same remote-endpoint behavior over stdio with the key in a header.
-
-## Tools
-
-Tools are loaded dynamically from the RoboSystems API based on your graph, so the authoritative list is whatever your server advertises — the proxy adds nothing of its own. The tables below are representative.
-
-### Financial Data
-
-| Tool                           | Description                                                                    |
-| ------------------------------ | ------------------------------------------------------------------------------ |
-| `financial-statement-analysis` | A company's financial statements, by ticker or CIK and reporting period        |
-| `disclosures`                  | The map of a report's sections: one row per note or statement                  |
-| `information-block`            | One section read whole: rows, breakdowns, calculation footing, and text blocks |
-| `build-fact-grid`              | Construct multidimensional fact grids from graph data for analysis             |
-
-### Graph Exploration
-
-| Tool                  | Description                                                    |
-| --------------------- | -------------------------------------------------------------- |
-| `read-graph-cypher`   | Run read-only Cypher queries against the knowledge graph       |
-| `get-graph-schema`    | Introspect node types, relationships, and properties           |
-| `get-graph-info`      | Graph metadata and statistics                                  |
-| `resolve-element`     | Map financial concepts (e.g. "revenue") to XBRL element qnames |
-| `search-documents`    | Find which filings or documents discuss something              |
-| `get-example-queries` | Query templates and examples for common patterns               |
-
-## Resources
-
-- [RoboSystems Platform](https://robosystems.ai)
-- [GitHub Repository](https://github.com/RoboFinSystems/robosystems)
-- [API Reference](https://robosystems.ai/docs/api)
-- [OpenAPI Specification](https://api.robosystems.ai/openapi.json)
+- **MCP**: [AI Operators & MCP](https://robosystems.ai/docs/technical/ai-operators-and-mcp)
+- **Technical docs**: [robosystems.ai/docs/technical](https://robosystems.ai/docs/technical)
+- **Related**: [RoboSystems](https://github.com/RoboFinSystems/robosystems) · [Python client](https://github.com/RoboFinSystems/robosystems-python-client) · [TypeScript client](https://github.com/RoboFinSystems/robosystems-typescript-client)
 
 ## Support
 
-- [Issues](https://github.com/RoboFinSystems/robosystems-mcp-client/issues)
-- [Documentation](https://robosystems.ai/docs/technical)
-- [Projects](https://github.com/orgs/RoboFinSystems/projects)
-- [Discussions](https://github.com/orgs/RoboFinSystems/discussions)
+- [Issues](https://github.com/RoboFinSystems/robosystems-mcp-client/issues) · [Discussions](https://github.com/orgs/RoboFinSystems/discussions) · [Projects](https://github.com/orgs/RoboFinSystems/projects)
+- [CONTRIBUTING.md](.github/CONTRIBUTING.md): branch conventions, coding standards and the pull request process
 
 ## License
 
