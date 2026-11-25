@@ -1,6 +1,6 @@
 {
   "name": "@robosystems/mcp",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "MCP stdio bridge for RoboSystems, the open-source knowledge graph for finance; proxies to the hosted endpoint by default",
   "type": "module",
   "main": "index.js",
