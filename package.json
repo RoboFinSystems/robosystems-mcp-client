@@ -5,8 +5,7 @@
   "type": "module",
   "main": "index.js",
   "bin": {
-    "@robosystems/mcp": "./index.js",
-    "create-feature": "./bin/create-feature.sh"
+    "@robosystems/mcp": "./index.js"
   },
   "files": [
     "index.js",
@@ -49,7 +48,7 @@
     "vitest": "^4.0.3"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "publishConfig": {
     "access": "public"
