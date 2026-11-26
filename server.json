@@ -1,0 +1,53 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "ai.robosystems/mcp-bridge",
+  "title": "RoboSystems MCP Bridge",
+  "description": "One local connection for every RoboSystems graph an API key covers: books, SEC filings, subgraphs",
+  "version": "1.0.0",
+  "websiteUrl": "https://robosystems.ai/docs/technical/the-mcp-bridge",
+  "repository": {
+    "url": "https://github.com/RoboFinSystems/robosystems-mcp-bridge",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@robosystems/mcp",
+      "version": "1.0.0",
+      "runtimeHint": "npx",
+      "environmentVariables": [
+        {
+          "name": "ROBOSYSTEMS_API_KEY",
+          "description": "A RoboSystems API key, account-wide or scoped to one graph. Create one in the app under Settings, API Keys.",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "ROBOSYSTEMS_GRAPH_IDS",
+          "description": "Optional. Limits the connection to these graphs and their subgraphs: ids or alias=id pairs separated by commas, with :ro to make one read-only. Required with a key scoped to one graph.",
+          "isRequired": false,
+          "isSecret": false,
+          "placeholder": "books=kg1a2b3c4d5e6f7a8b9c0d,sec:ro"
+        },
+        {
+          "name": "ROBOSYSTEMS_READ_ONLY",
+          "description": "Optional. Set to true to withhold every write tool.",
+          "isRequired": false,
+          "isSecret": false,
+          "placeholder": "true"
+        },
+        {
+          "name": "ROBOSYSTEMS_API_URL",
+          "description": "Optional. The API address of a stack you run yourself; the hosted API is the default.",
+          "isRequired": false,
+          "isSecret": false,
+          "placeholder": "https://api.robosystems.ai"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

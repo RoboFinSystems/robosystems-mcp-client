@@ -2,6 +2,7 @@
   "name": "@robosystems/mcp",
   "version": "1.0.0",
   "description": "MCP stdio bridge for RoboSystems, the open-source knowledge graph for finance; one connection for every graph an API key reaches",
+  "mcpName": "ai.robosystems/mcp-bridge",
   "type": "module",
   "main": "index.js",
   "bin": {
@@ -31,11 +32,15 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
+    "model-context-protocol",
     "robosystems",
-    "financial",
-    "graph",
-    "api",
-    "model-context-protocol"
+    "knowledge-graph",
+    "accounting",
+    "general-ledger",
+    "sec",
+    "xbrl",
+    "financial-data"
   ],
   "author": "RFS LLC",
   "license": "MIT",
@@ -56,10 +61,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/RoboFinSystems/robosystems-mcp-client"
+    "url": "https://github.com/RoboFinSystems/robosystems-mcp-bridge"
   },
   "bugs": {
-    "url": "https://github.com/RoboFinSystems/robosystems-mcp-client/issues"
+    "url": "https://github.com/RoboFinSystems/robosystems-mcp-bridge/issues"
   },
-  "homepage": "https://github.com/RoboFinSystems/robosystems-mcp-client#readme"
+  "homepage": "https://robosystems.ai/docs/technical/the-mcp-bridge"
 }

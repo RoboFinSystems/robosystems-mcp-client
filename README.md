@@ -1,4 +1,4 @@
-# RoboSystems MCP Client
+# RoboSystems MCP Bridge
 
 [![npm version](https://badge.fury.io/js/@robosystems%2Fmcp.svg)](https://www.npmjs.com/package/@robosystems/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -103,7 +103,7 @@ Setting `ROBOSYSTEMS_GRAPH_ID` or `ROBOSYSTEMS_MCP_URL` selects proxy mode. For 
 
 ## Support
 
-- [Issues](https://github.com/RoboFinSystems/robosystems-mcp-client/issues) · [Discussions](https://github.com/orgs/RoboFinSystems/discussions) · [Projects](https://github.com/orgs/RoboFinSystems/projects)
+- [Issues](https://github.com/RoboFinSystems/robosystems-mcp-bridge/issues) · [Discussions](https://github.com/orgs/RoboFinSystems/discussions) · [Projects](https://github.com/orgs/RoboFinSystems/projects)
 - [CONTRIBUTING.md](.github/CONTRIBUTING.md): branch conventions, coding standards and the pull request process
 
 ## License

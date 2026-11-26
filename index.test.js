@@ -3,6 +3,9 @@
  * proxy.test.js; this pins the two decisions the entry makes.
  */
 
+import { readFileSync } from 'fs'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
 import { describe, it, expect } from 'vitest'
 import { _isNewerVersion, isEnabled, resolveEndpoint } from './index.js'
 
@@ -47,5 +50,34 @@ describe('isEnabled', () => {
     for (const value of [undefined, '', '0', 'false', 'no', 'on']) {
       expect(isEnabled(value)).toBe(false)
     }
+  })
+})
+
+describe('the MCP Registry listing', () => {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const text = (name) => readFileSync(join(here, name), 'utf8')
+  const pkg = JSON.parse(text('package.json'))
+  const listing = JSON.parse(text('server.json'))
+
+  it('pins the version the package releases', () => {
+    expect(listing.version).toBe(pkg.version)
+    expect(listing.packages.map((p) => p.version)).toEqual([pkg.version])
+  })
+
+  it('names the package the registry checks ownership against', () => {
+    expect(listing.packages[0].identifier).toBe(pkg.name)
+    expect(pkg.mcpName).toBe(listing.name)
+    expect(listing.description.length).toBeLessThanOrEqual(100)
+  })
+
+  it('declares only settings the bridge reads', () => {
+    const source = text('index.js')
+    for (const variable of listing.packages[0].environmentVariables) {
+      expect(source).toContain(`process.env.${variable.name}`)
+    }
+    const key = listing.packages[0].environmentVariables.find(
+      (v) => v.name === 'ROBOSYSTEMS_API_KEY'
+    )
+    expect(key).toMatchObject({ isRequired: true, isSecret: true })
   })
 })
