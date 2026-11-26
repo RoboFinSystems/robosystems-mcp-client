@@ -1,24 +1,24 @@
 #!/usr/bin/env node
 
 /**
- * RoboSystems MCP stdio proxy.
+ * RoboSystems MCP stdio bridge.
  *
- * A transparent pipe between a stdio-only MCP client (Claude Desktop, or any
- * host that cannot speak HTTP transports) and the platform's native MCP
- * endpoint (Streamable HTTP). Every JSON-RPC message is forwarded verbatim
- * with the API-key header attached, so per-session instructions, live tool
- * lists and streamed progress notifications behave exactly as they do when
- * the URL is connected directly. The proxy adds nothing of its own.
+ * Two modes, chosen by the environment:
  *
- * The REST-aggregating bridge that used to live here (GET /mcp/tools + POST
- * /mcp/call-tool, plus client-side workspace tools) was retired when the
- * server removed those endpoints; every server speaks the transport.
+ * - Proxy (ROBOSYSTEMS_GRAPH_ID or ROBOSYSTEMS_MCP_URL set): a transparent
+ *   pipe between a stdio MCP client and one graph's MCP endpoint (Streamable
+ *   HTTP). Every JSON-RPC message is forwarded verbatim with the API-key
+ *   header attached; the bridge adds nothing of its own.
+ * - Catalog (neither set): one connection for every graph the API key
+ *   reaches. Four fixed tools take the graph as an argument and forward to
+ *   that graph's endpoint, so a subgraph is usable the moment it exists.
  */
 
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { runProxy } from './proxy.js'
+import { parseGraphSet, runCatalog } from './catalog.js'
 
 // Get package version dynamically
 const __filename = fileURLToPath(import.meta.url)
@@ -86,22 +86,45 @@ export function resolveEndpoint({ baseUrl, graphId, mcpUrl }) {
 }
 
 async function main() {
+  const apiKey = process.env.ROBOSYSTEMS_API_KEY
   const url = resolveEndpoint({
     baseUrl: process.env.ROBOSYSTEMS_API_URL,
     graphId: process.env.ROBOSYSTEMS_GRAPH_ID,
     mcpUrl: process.env.ROBOSYSTEMS_MCP_URL,
   })
-  if (!url) {
-    console.error('ROBOSYSTEMS_GRAPH_ID (or a full ROBOSYSTEMS_MCP_URL) is required')
-    console.error('Set one of them in your MCP configuration')
+
+  if (url) {
+    if (process.env.ROBOSYSTEMS_GRAPH_IDS) {
+      console.error(
+        'ROBOSYSTEMS_GRAPH_IDS is ignored: ROBOSYSTEMS_GRAPH_ID or ROBOSYSTEMS_MCP_URL ' +
+          'selects the single-graph proxy'
+      )
+    }
+    void checkForUpdate() // fire-and-forget stale-version warning (stderr only)
+    await runProxy({ url, apiKey, version: PACKAGE_VERSION })
+    return
+  }
+
+  if (!apiKey) {
+    console.error('ROBOSYSTEMS_API_KEY is required')
+    console.error(
+      'Set it alone to reach every graph the key covers, or with ROBOSYSTEMS_GRAPH_ID ' +
+        'to connect one graph'
+    )
     process.exit(1)
   }
 
-  void checkForUpdate() // fire-and-forget stale-version warning (stderr only)
-  await runProxy({ url, apiKey: process.env.ROBOSYSTEMS_API_KEY, version: PACKAGE_VERSION })
+  const graphSet = parseGraphSet(process.env.ROBOSYSTEMS_GRAPH_IDS)
+  void checkForUpdate()
+  await runCatalog({
+    baseUrl: process.env.ROBOSYSTEMS_API_URL,
+    apiKey,
+    version: PACKAGE_VERSION,
+    graphSet,
+  })
 }
 
-// Only run as the proxy if this is the main module (works for `node index.js`
+// Only run as the bridge if this is the main module (works for `node index.js`
 // and the npx binary names); never under the test runner.
 const isMainModule =
   import.meta.url === `file://${process.argv[1]}` ||

@@ -1,7 +1,7 @@
 {
   "name": "@robosystems/mcp",
   "version": "0.5.5",
-  "description": "MCP stdio bridge for RoboSystems, the open-source knowledge graph for finance; proxies to the hosted endpoint by default",
+  "description": "MCP stdio bridge for RoboSystems, the open-source knowledge graph for finance; one connection for every graph an API key reaches",
   "type": "module",
   "main": "index.js",
   "bin": {
@@ -10,6 +10,7 @@
   "files": [
     "index.js",
     "proxy.js",
+    "catalog.js",
     "README.md",
     "LICENSE"
   ],
