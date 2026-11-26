@@ -27,10 +27,9 @@ line of prose.
 The filename is version-specific on purpose: a leftover file can never be picked
 up by a later release.
 
-Curate when the tool surface changes. This package is pre-1.0 and owes no formal
-semver promise, but renaming a tool, changing an argument's meaning, or changing
-how the server is registered breaks running agent configurations — and the
-release notes are the only place a user finds out.
+Curate when the tool surface changes. Renaming a tool, changing an argument's
+meaning, or changing how the server is registered breaks running agent
+configurations — and the release notes are the only place a user finds out.
 
-No release has used this mechanism yet; every version through `v0.3.12` shipped
-the generated changelog.
+`v1.0.0` is the first release to use this mechanism; every version before it
+shipped the generated changelog.
