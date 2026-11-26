@@ -2,13 +2,14 @@
  * Tests for catalog mode: one connection, the graph named on every call.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { Readable } from 'stream'
 import { ReadableStream } from 'stream/web'
 import { TextEncoder } from 'util'
 import {
   CATALOG_TOOLS,
   createCatalog,
+  isGraphReadOnly,
   parseGraphSet,
   resolveGraph,
   runCatalog,
@@ -153,10 +154,20 @@ describe('parseGraphSet', () => {
   it('reads ids and alias=id pairs', () => {
     const set = parseGraphSet(` rfs=${PARENT}, sec ,`)
     expect(set.entries).toEqual([
-      { id: PARENT, alias: 'rfs' },
-      { id: 'sec', alias: null },
+      { id: PARENT, alias: 'rfs', readOnly: false },
+      { id: 'sec', alias: null, readOnly: false },
     ])
     expect(set.aliases.get('rfs')).toBe(PARENT)
+  })
+
+  it('marks an entry read-only with the :ro suffix, with or without an alias', () => {
+    const set = parseGraphSet(`rfs=${PARENT}:ro, sec:ro, kgother`)
+    expect([...set.readOnly]).toEqual([PARENT, 'sec'])
+    expect(set.aliases.get('rfs')).toBe(PARENT)
+    expect(isGraphReadOnly(PARENT, set)).toBe(true)
+    expect(isGraphReadOnly(SUBGRAPH, set)).toBe(true)
+    expect(isGraphReadOnly('kgother', set)).toBe(false)
+    expect(isGraphReadOnly(PARENT, null)).toBe(false)
   })
 
   it('refuses anything that is not a safe reference', () => {
@@ -285,6 +296,22 @@ describe('list-graphs', () => {
     expect(payload.graphs.map((g) => g.graph)).toEqual([PARENT, SUBGRAPH, 'sec'])
     expect(payload.graphs[0].alias).toBe('rfs')
     expect(payload.graphs[2].note).toMatch(/not in the account listing/)
+  })
+
+  it('counts each parent\u2019s subgraphs and carries a description that adds to the name', async () => {
+    const api = makeApi({
+      graphs: [
+        { graphId: PARENT, graphName: 'RFS LLC', description: 'Holding company books' },
+        { graphId: SUBGRAPH, graphName: 'dev', description: 'dev', parentGraphId: PARENT },
+        { graphId: `${PARENT}_scratch`, parentGraphId: PARENT },
+      ],
+    })
+    const { call, text } = makeCatalog(api)
+    const [parent, dev] = JSON.parse(text(await call('list-graphs', {}))).graphs
+    expect(parent.subgraphs).toBe(2)
+    expect(parent.description).toBe('Holding company books')
+    expect(dev.description).toBeUndefined()
+    expect(dev.subgraphs).toBeUndefined()
   })
 
   it('falls back to the configured set when the key cannot list the account', async () => {
@@ -535,5 +562,116 @@ describe('runCatalog', () => {
         .map((m) => m.id)
         .sort()
     ).toEqual([1, 2])
+  })
+})
+
+describe('read-only', () => {
+  it('withholds the write tool from a read-only connection and refuses a call to it', async () => {
+    const api = makeApi()
+    const { catalog, output, call, text } = makeCatalog(api, { readOnly: true })
+    await catalog.handleLine(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }))
+    await catalog.handleLine(
+      JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} })
+    )
+    const messages = output.messages()
+    expect(messages[0].result.tools.map((t) => t.name)).toEqual([
+      'list-graphs',
+      'get-tools',
+      'call-read-tool',
+    ])
+    expect(messages[1].result.instructions).toMatch(/read-only connection/)
+    const reply = await call('call-write-tool', { graph: PARENT, name: 'create-subgraph' })
+    expect(reply.result.isError).toBe(true)
+    expect(text(reply)).toMatch(/read-only/)
+    expect(api.requests).toHaveLength(0)
+  })
+
+  it('lists only read tools for a read-only graph and says how many writes it withheld', async () => {
+    const { call, text } = makeCatalog(makeApi(), { readOnly: true })
+    const index = JSON.parse(text(await call('get-tools', { graph: PARENT })))
+    expect(index.read_only).toBe(true)
+    expect(index.write_tools).toBeUndefined()
+    expect(index.write_tools_withheld).toBe(2)
+    expect(index.read_tools.map((t) => t.name)).toEqual(['get-trial-balance'])
+    const byName = JSON.parse(
+      text(await call('get-tools', { graph: PARENT, names: ['create-subgraph', 'nope'] }))
+    )
+    expect(byName.tools).toEqual([])
+    expect(byName.withheld_read_only).toEqual(['create-subgraph'])
+    expect(byName.not_on_this_graph).toEqual(['nope'])
+  })
+
+  it('applies a per-graph mark to that graph and its subgraphs only', async () => {
+    const api = makeApi({ graphs: [{ graphId: PARENT }, { graphId: 'kgother' }] })
+    const { call, text } = makeCatalog(api, {
+      graphSet: parseGraphSet(`rfs=${PARENT}:ro,kgother`),
+    })
+    const listing = JSON.parse(text(await call('list-graphs', {}))).graphs
+    expect(listing.map((g) => g.read_only)).toEqual([true, undefined])
+
+    for (const graph of ['rfs', SUBGRAPH]) {
+      const refused = await call('call-write-tool', { graph, name: 'create-subgraph' })
+      expect(text(refused)).toMatch(/is read-only on this connection/)
+      const viaRead = await call('call-read-tool', { graph, name: 'create-subgraph' })
+      expect(text(viaRead)).toMatch(/write tool, and graph .* is read-only/)
+    }
+    expect(api.mcpCalls().some((r) => r.body.method === 'tools/call')).toBe(false)
+
+    const allowed = await call('call-write-tool', { graph: 'kgother', name: 'create-subgraph' })
+    expect(text(allowed)).toBe('ran create-subgraph')
+    const read = await call('call-read-tool', { graph: 'rfs', name: 'get-trial-balance' })
+    expect(text(read)).toBe('ran get-trial-balance')
+  })
+})
+
+describe('cancellation', () => {
+  it('aborts the upstream request and sends no answer for a cancelled call', async () => {
+    let upstreamSignal = null
+    const api = makeApi()
+    const fetchImpl = (url, init = {}) => {
+      const body = init.body ? JSON.parse(init.body) : null
+      if (body?.method !== 'tools/call') return api.fetchImpl(url, init)
+      upstreamSignal = init.signal
+      return new Promise((_, reject) => {
+        init.signal.addEventListener('abort', () => reject(new Error('aborted')))
+      })
+    }
+    const { catalog, output } = makeCatalog({ ...api, fetchImpl })
+    const running = catalog.handleLine(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'tools/call',
+        params: {
+          name: 'call-read-tool',
+          arguments: { graph: PARENT, name: 'get-trial-balance' },
+        },
+      })
+    )
+    await vi.waitFor(() => expect(upstreamSignal).not.toBeNull())
+    await catalog.handleLine(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/cancelled',
+        params: { requestId: 7 },
+      })
+    )
+    await running
+    expect(upstreamSignal.aborted).toBe(true)
+    expect(output.messages()).toEqual([])
+  })
+
+  it('ignores a cancellation for a call that is not running', async () => {
+    const { catalog, output, call, text } = makeCatalog(makeApi())
+    await catalog.handleLine(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/cancelled',
+        params: { requestId: 999 },
+      })
+    )
+    expect(output.messages()).toEqual([])
+    const reply = await call('call-read-tool', { graph: PARENT, name: 'get-trial-balance' })
+    expect(text(reply)).toBe('ran get-trial-balance')
   })
 })

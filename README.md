@@ -71,14 +71,24 @@ To limit a connection to some graphs, and to name them, set `ROBOSYSTEMS_GRAPH_I
 
 Each entry is a graph id or `alias=id`. The connection then reaches those graphs and their subgraphs, and refuses any other. A key scoped to one graph cannot list the account, so set its graph here.
 
+### Read-only
+
+Text a model reads from one graph can try to steer a write on another. Two settings take writes off the table:
+
+- `ROBOSYSTEMS_READ_ONLY=true` makes the whole connection read-only: `call-write-tool` is not listed and cannot be called
+- A `:ro` suffix in `ROBOSYSTEMS_GRAPH_IDS` does the same for one graph and its subgraphs: `books=kg1a2b3c4d5e6f7a8b9c0d,sec:ro`
+
+Either way the graph's write tools are left out of `get-tools`, and the server still enforces what the key itself may do.
+
 ## Configuration
 
-The bridge reads five environment variables and takes no command-line arguments.
+The bridge reads six environment variables and takes no command-line arguments.
 
 | Variable                | Purpose                                                                                     | Default                      |
 | ----------------------- | ------------------------------------------------------------------------------------------- | ---------------------------- |
 | `ROBOSYSTEMS_API_KEY`   | API key, sent as `X-API-Key`; account-wide or scoped to one graph. Required in catalog mode | none                         |
 | `ROBOSYSTEMS_GRAPH_IDS` | Catalog mode: the graphs to reach, as ids or `alias=id` pairs separated by commas           | every graph the key reaches  |
+| `ROBOSYSTEMS_READ_ONLY` | Catalog mode: `true` withholds every write tool                                             | `false`                      |
 | `ROBOSYSTEMS_GRAPH_ID`  | Proxy mode: the one graph to connect, `sec`, a graph id, or a subgraph id such as `kg…_dev` | none                         |
 | `ROBOSYSTEMS_API_URL`   | Base URL of the API. A graph's endpoint is `{ROBOSYSTEMS_API_URL}/v1/graphs/{graph_id}/mcp` | `https://api.robosystems.ai` |
 | `ROBOSYSTEMS_MCP_URL`   | Proxy mode: a full endpoint URL. Overrides the derived one, and needs no graph id           | derived                      |

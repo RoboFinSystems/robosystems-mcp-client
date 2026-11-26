@@ -8,6 +8,9 @@
  * `tools/list`, so the list is the same on every connection and a subgraph is
  * usable the moment it exists. There is no current graph: nothing here carries
  * state from one call to the next except short-lived caches of server output.
+ *
+ * A connection, or a graph within it, can be read-only: its write tools are
+ * then neither listed nor callable.
  */
 
 import { createInterface } from 'readline'
@@ -22,6 +25,8 @@ const JSONRPC_INVALID_PARAMS = -32602
 // A graph reference becomes a URL path segment, so nothing outside this set
 // is ever forwarded.
 const GRAPH_REF = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
+
+const READ_ONLY_SUFFIX = ':ro'
 
 const CACHE_TTL_MS = 60_000
 const LOOKUP_TIMEOUT_MS = 30_000
@@ -155,27 +160,35 @@ export const CATALOG_TOOLS = [
 
 /**
  * Parse ROBOSYSTEMS_GRAPH_IDS: a comma-separated list of graph ids, each
- * optionally named (`rfs=kg1a…`). Returns null when unset, which means every
- * graph the key reaches. Throws on anything that is not a safe reference.
+ * optionally named (`rfs=kg1a…`) and optionally read-only (`sec:ro`).
+ * Returns null when unset, which means every graph the key reaches. Throws on
+ * anything that is not a safe reference.
  */
 export function parseGraphSet(raw) {
   if (!raw || !raw.trim()) return null
   const entries = []
   const ids = new Set()
   const aliases = new Map()
+  const readOnly = new Set()
   for (const part of raw.split(',')) {
     const item = part.trim()
     if (!item) continue
-    const eq = item.indexOf('=')
-    const alias = eq === -1 ? null : item.slice(0, eq).trim()
-    const id = eq === -1 ? item : item.slice(eq + 1).trim()
+    const isReadOnly = item.endsWith(READ_ONLY_SUFFIX)
+    const pair = isReadOnly ? item.slice(0, -READ_ONLY_SUFFIX.length).trim() : item
+    const eq = pair.indexOf('=')
+    const alias = eq === -1 ? null : pair.slice(0, eq).trim()
+    const id = eq === -1 ? pair : pair.slice(eq + 1).trim()
     if (!GRAPH_REF.test(id) || (alias !== null && !GRAPH_REF.test(alias))) {
-      throw new Error(`ROBOSYSTEMS_GRAPH_IDS: "${item}" is not a graph id or alias=id pair`)
+      throw new Error(
+        `ROBOSYSTEMS_GRAPH_IDS: "${item}" is not a graph id or alias=id pair ` +
+          `(add "${READ_ONLY_SUFFIX}" for read-only)`
+      )
     }
     if (ids.has(id)) continue
     ids.add(id)
     if (alias) aliases.set(alias, id)
-    entries.push({ id, alias })
+    if (isReadOnly) readOnly.add(id)
+    entries.push({ id, alias, readOnly: isReadOnly })
   }
   // Set but empty must not quietly widen the connection to every graph.
   if (entries.length === 0) throw new Error('ROBOSYSTEMS_GRAPH_IDS is set but names no graph')
@@ -184,7 +197,7 @@ export function parseGraphSet(raw) {
       throw new Error(`ROBOSYSTEMS_GRAPH_IDS: alias "${alias}" is also a graph id`)
     }
   }
-  return { entries, ids, aliases }
+  return { entries, ids, aliases, readOnly }
 }
 
 /**
@@ -207,6 +220,16 @@ export function resolveGraph(ref, graphSet) {
   throw new Error(
     `Graph "${ref}" is outside this connection. It reaches: ${allowed}, and their subgraphs`
   )
+}
+
+/** Whether writes are withheld for a graph: its own mark, or its parent's. */
+export function isGraphReadOnly(graphId, graphSet) {
+  if (!graphSet) return false
+  if (graphSet.readOnly.has(graphId)) return true
+  for (const id of graphSet.readOnly) {
+    if (graphId.startsWith(`${id}_`)) return true
+  }
+  return false
 }
 
 /** The first paragraph of a tool description that says what the tool does. */
@@ -242,12 +265,33 @@ function searchTools(tools, query) {
     .map((hit) => hit.tool)
 }
 
-function buildInstructions(graphSet) {
+function buildInstructions(graphSet, readOnly) {
   const scope = graphSet
     ? `This connection is limited to these graphs and their subgraphs: ${graphSet.entries
-        .map((e) => (e.alias ? `\`${e.alias}\` (\`${e.id}\`)` : `\`${e.id}\``))
+        .map((e) => {
+          const label = e.alias ? `\`${e.alias}\` (\`${e.id}\`)` : `\`${e.id}\``
+          return e.readOnly && !readOnly ? `${label}, read-only` : label
+        })
         .join(', ')}.`
     : 'This connection reaches every graph the API key can.'
+  if (readOnly) {
+    return [
+      'RoboSystems, through one read-only connection for many graphs. Each graph is its own MCP ' +
+        'server with its own tools and instructions; this connection looks them up and calls ' +
+        'them for you.',
+      scope,
+      'This connection cannot change anything: write tools are neither listed nor callable.',
+      'HOW TO WORK',
+      '- `list-graphs` says what you can reach. Every other tool takes `graph`: there is no ' +
+        'current or default graph, so name it on every call.',
+      '- Before working on a graph, call `get-tools` with `graph` alone and read the ' +
+        'instructions it returns. They are that graph’s own and they differ from graph to ' +
+        'graph. Where they describe a write, it is not available here.',
+      '- Before the first call to a tool, call `get-tools` with its name in `names` and follow ' +
+        'its description and input schema, then run it with `call-read-tool`.',
+      'When several graphs are in play, say which graph a figure belongs to.',
+    ].join('\n')
+  }
   return [
     'RoboSystems, through one connection for many graphs. Each graph is its own MCP server with ' +
       'its own tools and instructions; this connection looks them up and calls them for you.',
@@ -287,6 +331,7 @@ export function createCatalog({
   apiKey,
   version,
   graphSet = null,
+  readOnly = false,
   output = process.stdout,
   fetchImpl = fetch,
   now = Date.now,
@@ -294,7 +339,13 @@ export function createCatalog({
   const apiBase = (baseUrl || 'https://api.robosystems.ai').replace(/\/$/, '')
   const toolCache = new Map()
   const instructionCache = new Map()
+  const inFlight = new Map()
   let lookupId = 0
+
+  const tools = readOnly
+    ? CATALOG_TOOLS.filter((tool) => tool.name !== 'call-write-tool')
+    : CATALOG_TOOLS
+  const writesWithheld = (graphId) => readOnly || isGraphReadOnly(graphId, graphSet)
 
   const deliver = (message) => output.write(JSON.stringify(message) + '\n')
 
@@ -319,13 +370,18 @@ export function createCatalog({
     return new UpstreamError(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`)
   }
 
+  const withTimeout = (signal) => {
+    const timeout = AbortSignal.timeout(LOOKUP_TIMEOUT_MS)
+    return signal ? AbortSignal.any([signal, timeout]) : timeout
+  }
+
   /** POST one JSON-RPC message to a graph and hand each reply to onMessage. */
-  const post = async (graphId, message, onMessage, timeoutMs) => {
+  const post = async (graphId, message, onMessage, signal) => {
     const response = await fetchImpl(`${apiBase}/v1/graphs/${graphId}/mcp`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(message),
-      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+      ...(signal ? { signal } : {}),
     })
     if (!response.ok) throw await httpFailure(response)
     const contentType = response.headers.get('content-type') || ''
@@ -338,7 +394,7 @@ export function createCatalog({
   }
 
   /** A request the bridge makes on its own account; returns the result. */
-  const lookup = async (graphId, method, params) => {
+  const lookup = async (graphId, method, params, signal) => {
     const id = `catalog-${++lookupId}`
     let reply = null
     await post(
@@ -347,7 +403,7 @@ export function createCatalog({
       (message) => {
         if (message?.id === id) reply = message
       },
-      LOOKUP_TIMEOUT_MS
+      withTimeout(signal)
     )
     if (!reply) throw new UpstreamError(`No reply to ${method}`)
     if (reply.error) throw new UpstreamError(reply.error.message || `${method} failed`)
@@ -362,17 +418,26 @@ export function createCatalog({
     return value
   }
 
-  const toolsOf = (graphId) =>
-    cached(toolCache, graphId, async () => (await lookup(graphId, 'tools/list')).tools || [])
+  const toolsOf = (graphId, signal) =>
+    cached(
+      toolCache,
+      graphId,
+      async () => (await lookup(graphId, 'tools/list', undefined, signal)).tools || []
+    )
 
-  const instructionsOf = (graphId) =>
+  const instructionsOf = (graphId, signal) =>
     cached(instructionCache, graphId, async () => {
       try {
-        const result = await lookup(graphId, 'initialize', {
-          protocolVersion: PROTOCOL_VERSION,
-          capabilities: {},
-          clientInfo: { name: 'robosystems-mcp', version },
-        })
+        const result = await lookup(
+          graphId,
+          'initialize',
+          {
+            protocolVersion: PROTOCOL_VERSION,
+            capabilities: {},
+            clientInfo: { name: 'robosystems-mcp', version },
+          },
+          signal
+        )
         return result?.instructions || null
       } catch {
         // Instructions are guidance; a graph without them is still usable.
@@ -380,13 +445,13 @@ export function createCatalog({
       }
     })
 
-  const listGraphs = async () => {
+  const listGraphs = async (signal) => {
     let listed = null
     let listingError = null
     try {
       const response = await fetchImpl(`${apiBase}/v1/graphs`, {
         headers: headers(),
-        signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
+        signal: withTimeout(signal),
       })
       if (!response.ok) throw await httpFailure(response)
       listed = (await response.json()).graphs || []
@@ -406,16 +471,27 @@ export function createCatalog({
     const inScope = (graph) =>
       !graphSet || graphSet.ids.has(graph.graphId) || graphSet.ids.has(graph.parentGraphId)
 
+    const subgraphCount = new Map()
+    for (const graph of listed || []) {
+      if (!graph.parentGraphId) continue
+      subgraphCount.set(graph.parentGraphId, (subgraphCount.get(graph.parentGraphId) || 0) + 1)
+    }
+
     const graphs = (listed || []).filter(inScope).map((graph) => {
       const row = { graph: graph.graphId }
       if (aliasOf.get(graph.graphId)) row.alias = aliasOf.get(graph.graphId)
       if (graph.graphName) row.name = graph.graphName
+      if (graph.description && graph.description !== graph.graphName) {
+        row.description = graph.description
+      }
       if (graph.graphType) row.type = graph.graphType
       if (graph.schemaExtensions?.length) row.extensions = graph.schemaExtensions
       if (graph.repositoryType) row.repository = graph.repositoryType
       if (graph.parentGraphId) row.parent = graph.parentGraphId
+      if (subgraphCount.get(graph.graphId)) row.subgraphs = subgraphCount.get(graph.graphId)
       if (graph.role) row.role = graph.role
       if (graph.status) row.status = graph.status
+      if (writesWithheld(graph.graphId)) row.read_only = true
       return row
     })
 
@@ -424,6 +500,7 @@ export function createCatalog({
       if (seen.has(entry.id)) continue
       const row = { graph: entry.id }
       if (entry.alias) row.alias = entry.alias
+      if (writesWithheld(entry.id)) row.read_only = true
       row.note = listed
         ? 'Configured for this connection; not in the account listing'
         : 'Configured for this connection'
@@ -437,14 +514,18 @@ export function createCatalog({
     })
   }
 
-  const getTools = async (graphId, args) => {
-    const tools = await toolsOf(graphId)
+  const getTools = async (graphId, args, signal) => {
+    const served = await toolsOf(graphId, signal)
+    const withheld = writesWithheld(graphId)
+    const tools = withheld ? served.filter(isReadTool) : served
 
     if (Array.isArray(args.names) && args.names.length > 0) {
       const names = args.names.slice(0, MAX_DEFINITIONS)
       const byName = new Map(tools.map((tool) => [tool.name, tool]))
+      const servedNames = new Set(served.map((tool) => tool.name))
       const found = names.filter((name) => byName.has(name)).map((name) => byName.get(name))
-      const unknown = names.filter((name) => !byName.has(name))
+      const unknown = names.filter((name) => !servedNames.has(name))
+      const writes = names.filter((name) => servedNames.has(name) && !byName.has(name))
       const payload = {
         graph: graphId,
         tools: found.map((tool) => ({
@@ -455,6 +536,7 @@ export function createCatalog({
         })),
       }
       if (unknown.length) payload.not_on_this_graph = unknown
+      if (writes.length) payload.withheld_read_only = writes
       if (args.names.length > MAX_DEFINITIONS) {
         payload.omitted = args.names.slice(MAX_DEFINITIONS)
       }
@@ -471,21 +553,29 @@ export function createCatalog({
       write_tools: listed.filter((tool) => !isReadTool(tool)).map(row),
       next: 'Call `get-tools` with `names` for the full definition before calling a tool.',
     }
+    if (withheld) {
+      delete payload.write_tools
+      payload.read_only = true
+      payload.write_tools_withheld = served.length - tools.length
+    }
     if (query) {
       payload.query = query
     } else {
-      const instructions = await instructionsOf(graphId)
+      const instructions = await instructionsOf(graphId, signal)
       if (instructions) payload.instructions = instructions
     }
     return jsonResult(payload)
   }
 
   /** Forward one tool call to its graph and relay everything it sends back. */
-  const callTool = async (message, graphId, args, wantRead) => {
+  const callTool = async (message, graphId, args, wantRead, signal) => {
     if (typeof args.name !== 'string' || !args.name) {
       return textResult('`name` is required: the tool to run, from `get-tools`', true)
     }
-    const tool = (await toolsOf(graphId)).find((t) => t.name === args.name)
+    if (!wantRead && writesWithheld(graphId)) {
+      return textResult(`Graph ${graphId} is read-only on this connection.`, true)
+    }
+    const tool = (await toolsOf(graphId, signal)).find((t) => t.name === args.name)
     if (!tool) {
       return textResult(
         `Graph ${graphId} has no tool named "${args.name}". ` +
@@ -494,6 +584,12 @@ export function createCatalog({
       )
     }
     if (isReadTool(tool) !== wantRead) {
+      if (wantRead && writesWithheld(graphId)) {
+        return textResult(
+          `"${args.name}" is a write tool, and graph ${graphId} is read-only on this connection.`,
+          true
+        )
+      }
       return textResult(
         wantRead
           ? `"${args.name}" is a write tool: call it with \`call-write-tool\`.`
@@ -515,7 +611,8 @@ export function createCatalog({
         (reply) => {
           if (reply && reply.id === message.id && reply.method === undefined) answered = true
           deliver(reply)
-        }
+        },
+        signal
       )
     } catch (error) {
       // A stream that broke after the result arrived has nothing left to say.
@@ -525,10 +622,13 @@ export function createCatalog({
     return null
   }
 
-  const handleToolCall = async (message) => {
+  const handleToolCall = async (message, signal) => {
     const { name, arguments: rawArgs } = message.params
     const args = rawArgs && typeof rawArgs === 'object' ? rawArgs : {}
-    if (!CATALOG_TOOLS.some((tool) => tool.name === name)) {
+    if (readOnly && name === 'call-write-tool') {
+      return textResult('This connection is read-only: no write tool can be called.', true)
+    }
+    if (!tools.some((tool) => tool.name === name)) {
       return textResult(
         `Unknown tool: ${name}. A graph’s own tools run through \`call-read-tool\` or ` +
           '`call-write-tool`.',
@@ -536,10 +636,10 @@ export function createCatalog({
       )
     }
     try {
-      if (name === 'list-graphs') return await listGraphs()
+      if (name === 'list-graphs') return await listGraphs(signal)
       const graphId = resolveGraph(args.graph, graphSet)
-      if (name === 'get-tools') return await getTools(graphId, args)
-      return await callTool(message, graphId, args, name === 'call-read-tool')
+      if (name === 'get-tools') return await getTools(graphId, args, signal)
+      return await callTool(message, graphId, args, name === 'call-read-tool', signal)
     } catch (error) {
       return textResult(error.message, true)
     }
@@ -561,7 +661,13 @@ export function createCatalog({
       return
     }
 
-    // Notifications and client responses need no answer and have nowhere to go.
+    // A cancelled call stops its upstream request and is never answered.
+    if (message?.method === 'notifications/cancelled') {
+      inFlight.get(message.params?.requestId)?.abort()
+      return
+    }
+
+    // Other notifications and client responses need no answer and have nowhere to go.
     if (!message || typeof message.method !== 'string' || message.id === undefined) return
 
     const respond = (result) => deliver({ jsonrpc: '2.0', id: message.id, result })
@@ -573,19 +679,25 @@ export function createCatalog({
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'robosystems', title: 'RoboSystems', version },
-        instructions: buildInstructions(graphSet),
+        instructions: buildInstructions(graphSet, readOnly),
       })
     } else if (message.method === 'ping') {
       respond({})
     } else if (message.method === 'tools/list') {
-      respond({ tools: CATALOG_TOOLS })
+      respond({ tools })
     } else if (message.method === 'tools/call') {
       if (!message.params || typeof message.params.name !== 'string') {
         fail(JSONRPC_INVALID_PARAMS, 'Invalid params: expected a tool name')
         return
       }
-      const result = await handleToolCall(message)
-      if (result) respond(result)
+      const controller = new AbortController()
+      inFlight.set(message.id, controller)
+      try {
+        const result = await handleToolCall(message, controller.signal)
+        if (result && !controller.signal.aborted) respond(result)
+      } finally {
+        inFlight.delete(message.id)
+      }
     } else {
       fail(JSONRPC_METHOD_NOT_FOUND, `Method not found: ${message.method}`)
     }
@@ -602,18 +714,30 @@ export async function runCatalog({
   apiKey,
   version,
   graphSet = null,
+  readOnly = false,
   input = process.stdin,
   output = process.stdout,
   fetchImpl = fetch,
 }) {
-  const catalog = createCatalog({ baseUrl, apiKey, version, graphSet, output, fetchImpl })
+  const catalog = createCatalog({
+    baseUrl,
+    apiKey,
+    version,
+    graphSet,
+    readOnly,
+    output,
+    fetchImpl,
+  })
 
   console.error(`RoboSystems MCP catalog v${version}`)
   console.error(
     graphSet
-      ? `Graphs: ${graphSet.entries.map((e) => e.alias || e.id).join(', ')} (and their subgraphs)`
+      ? `Graphs: ${graphSet.entries
+          .map((e) => `${e.alias || e.id}${e.readOnly ? ' (read-only)' : ''}`)
+          .join(', ')} (and their subgraphs)`
       : 'Graphs: every graph the API key reaches'
   )
+  if (readOnly) console.error('Read-only: write tools are withheld')
 
   const pending = new Set()
   const rl = createInterface({ input, terminal: false })

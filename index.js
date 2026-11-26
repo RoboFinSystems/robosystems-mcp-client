@@ -12,6 +12,7 @@
  * - Catalog (neither set): one connection for every graph the API key
  *   reaches. Four fixed tools take the graph as an argument and forward to
  *   that graph's endpoint, so a subgraph is usable the moment it exists.
+ *   ROBOSYSTEMS_READ_ONLY withholds the write tool.
  */
 
 import { readFileSync } from 'fs'
@@ -85,6 +86,15 @@ export function resolveEndpoint({ baseUrl, graphId, mcpUrl }) {
   return `${(baseUrl || 'https://api.robosystems.ai').replace(/\/$/, '')}/v1/graphs/${graphId}/mcp`
 }
 
+/** A flag is on for `true`, `1` or `yes`, in any case. */
+export function isEnabled(value) {
+  return ['true', '1', 'yes'].includes(
+    String(value ?? '')
+      .trim()
+      .toLowerCase()
+  )
+}
+
 async function main() {
   const apiKey = process.env.ROBOSYSTEMS_API_KEY
   const url = resolveEndpoint({
@@ -121,6 +131,7 @@ async function main() {
     apiKey,
     version: PACKAGE_VERSION,
     graphSet,
+    readOnly: isEnabled(process.env.ROBOSYSTEMS_READ_ONLY),
   })
 }
 
