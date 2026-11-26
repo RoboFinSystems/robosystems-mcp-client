@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { _isNewerVersion, resolveEndpoint } from './index.js'
+import { _isNewerVersion, isEnabled, resolveEndpoint } from './index.js'
 
 describe('_isNewerVersion', () => {
   it('compares the three core components numerically', () => {
@@ -38,5 +38,14 @@ describe('resolveEndpoint', () => {
 
   it('returns null when nothing identifies an endpoint', () => {
     expect(resolveEndpoint({})).toBeNull()
+  })
+})
+
+describe('isEnabled', () => {
+  it('is on only for an explicit yes', () => {
+    for (const value of ['true', 'TRUE', ' 1 ', 'yes']) expect(isEnabled(value)).toBe(true)
+    for (const value of [undefined, '', '0', 'false', 'no', 'on']) {
+      expect(isEnabled(value)).toBe(false)
+    }
   })
 })

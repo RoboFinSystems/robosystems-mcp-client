@@ -24,7 +24,7 @@ const ERROR_BODY_PREVIEW_CHARS = 300
  * (keepalive) lines. `event:`/`id:`/`retry:` fields carry no JSON-RPC content
  * on this endpoint and are skipped.
  */
-async function relaySSE(body, deliver) {
+export async function relaySSE(body, deliver) {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
