@@ -1,6 +1,6 @@
 {
   "name": "@robosystems/mcp",
-  "version": "0.5.5",
+  "version": "1.0.0",
   "description": "MCP stdio bridge for RoboSystems, the open-source knowledge graph for finance; one connection for every graph an API key reaches",
   "type": "module",
   "main": "index.js",
