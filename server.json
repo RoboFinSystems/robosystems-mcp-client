@@ -3,7 +3,7 @@
   "name": "ai.robosystems/mcp-bridge",
   "title": "RoboSystems MCP Bridge",
   "description": "One local connection for every RoboSystems graph an API key covers: books, SEC filings, subgraphs",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "websiteUrl": "https://robosystems.ai/docs/technical/the-mcp-bridge",
   "repository": {
     "url": "https://github.com/RoboFinSystems/robosystems-mcp-bridge",
@@ -14,7 +14,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@robosystems/mcp",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "runtimeHint": "npx",
       "environmentVariables": [
         {
