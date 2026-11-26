@@ -1,6 +1,6 @@
-# Contributing to RoboSystems MCP Client
+# Contributing to RoboSystems MCP Bridge
 
-Thank you for your interest in contributing to the RoboSystems MCP Client! This is the Model Context Protocol (MCP) server that enables AI assistants to interact with the RoboSystems platform.
+Thank you for your interest in contributing to the RoboSystems MCP Bridge! This is the Model Context Protocol (MCP) server that enables AI assistants to interact with the RoboSystems platform.
 
 ## Community
 
@@ -25,12 +25,12 @@ Thank you for your interest in contributing to the RoboSystems MCP Client! This 
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/YOUR-USERNAME/robosystems-mcp-client.git
-   cd robosystems-mcp-client
+   git clone https://github.com/YOUR-USERNAME/robosystems-mcp-bridge.git
+   cd robosystems-mcp-bridge
    ```
 3. **Add the upstream remote**:
    ```bash
-   git remote add upstream https://github.com/RoboFinSystems/robosystems-mcp-client.git
+   git remote add upstream https://github.com/RoboFinSystems/robosystems-mcp-bridge.git
    ```
 4. **Set up your development environment** (see [Development Setup](#development-setup))
 
@@ -118,7 +118,7 @@ Look for issues labeled `good first issue` or `help wanted`. These are great sta
      "mcpServers": {
        "robosystems-dev": {
          "command": "node",
-         "args": ["/path/to/robosystems-mcp-client/dist/index.js"],
+         "args": ["/path/to/robosystems-mcp-bridge/dist/index.js"],
          "env": {
            "ROBOSYSTEMS_API_KEY": "your-api-key"
          }
@@ -280,12 +280,12 @@ npm publish
 ## Questions and Support
 
 - **[GitHub Discussions](https://github.com/orgs/RoboFinSystems/discussions)** - Best place for questions and community conversation
-- **[GitHub Issues](https://github.com/RoboFinSystems/robosystems-mcp-client/issues)** - Bug reports and feature requests for this repo
+- **[GitHub Issues](https://github.com/RoboFinSystems/robosystems-mcp-bridge/issues)** - Bug reports and feature requests for this repo
 - **[MCP Documentation](https://modelcontextprotocol.io/)** - Model Context Protocol specification
 - **Email**: security@robosystems.ai for security issues only
 
 ## Recognition
 
-Contributors will be recognized in our [Contributors](https://github.com/RoboFinSystems/robosystems-mcp-client/graphs/contributors) page.
+Contributors will be recognized in our [Contributors](https://github.com/RoboFinSystems/robosystems-mcp-bridge/graphs/contributors) page.
 
-Thank you for contributing to RoboSystems MCP Client!
+Thank you for contributing to RoboSystems MCP Bridge!

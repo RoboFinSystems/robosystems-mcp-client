@@ -104,8 +104,20 @@ jobs:
           # Update version in package.json
           npm version "$NEW_VERSION" --no-git-tag-version
 
+          # server.json is the Official MCP Registry listing. Clients that install
+          # from the registry run exactly the version it pins, so it moves with the
+          # package in the same commit; the publish job lists it after the npm upload.
+          node - "$NEW_VERSION" <<'JS'
+          const fs = require('fs')
+          const version = process.argv[2]
+          const listing = JSON.parse(fs.readFileSync('server.json', 'utf8'))
+          listing.version = version
+          for (const pkg of listing.packages) pkg.version = version
+          fs.writeFileSync('server.json', JSON.stringify(listing, null, 2) + '\n')
+          JS
+
           # Commit and push to main
-          git add package.json
+          git add package.json server.json
           git commit -m "Release v$NEW_VERSION"
           git push origin main
 
@@ -130,8 +142,8 @@ jobs:
     uses: RoboFinSystems/robosystems/.github/workflows/tag-release.yml@main
     with:
       branch_ref: ${{ needs.create-release.outputs.branch_name }}
-      product_name: 'RoboSystems MCP Client'
-      project_kind: 'MCP client SDK'
+      product_name: 'RoboSystems MCP Bridge'
+      project_kind: 'MCP bridge'
     secrets: inherit
 
   # npm's trusted publisher is pinned to this workflow file and the production
@@ -170,6 +182,47 @@ jobs:
           fi
           echo "✅ Checked out the released version $ACTUAL"
 
+      # Before anything irreversible: the registry listing must name this version
+      # and this package. The create-release job bumps both together; a hand
+      # edit could split them.
+      - name: Check server.json matches the release
+        run: |
+          node - <<'JS'
+          const fs = require('fs')
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+          const listing = JSON.parse(fs.readFileSync('server.json', 'utf8'))
+          const versions = new Set([listing.version, ...listing.packages.map((p) => p.version)])
+          if (versions.size !== 1 || !versions.has(pkg.version)) {
+            throw new Error(`server.json pins ${[...versions]}, package.json releases ${pkg.version}`)
+          }
+          if (pkg.mcpName !== listing.name) {
+            throw new Error(`package.json mcpName is ${pkg.mcpName}, server.json lists ${listing.name}`)
+          }
+          console.log(`server.json lists ${listing.name} ${pkg.version}`)
+          JS
+
+      # Pinned by version and checksum (the sha256 is the one in the release's
+      # registry_1.8.1_checksums.txt), so a new publisher build never runs here
+      # unreviewed. Installed outside the checkout, so it cannot reach the package.
+      - name: Install mcp-publisher
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.1
+          MCP_PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/mcp-publisher" --version
+
+      # The registry's own validation, which needs no login. Run before the npm
+      # upload: a version number is burned once published, and a listing the
+      # registry rejects could not be published for it afterwards.
+      - name: Validate server.json against the registry
+        run: mcp-publisher validate server.json
+
       - name: Check if already published
         id: check-published
         run: |
@@ -203,6 +256,50 @@ jobs:
       - name: Publish to npm
         if: steps.check-published.outputs.already_published == 'false'
         run: npm publish --provenance --access public
+
+      # The Official MCP Registry validates an npm listing against the published
+      # package (the version must exist and its package.json must carry the
+      # matching mcpName), so wait until npm serves it. Runs on a re-run too.
+      - name: Wait for npm to serve the release
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          for _ in $(seq 1 30); do
+            if npm view "@robosystems/mcp@${VERSION}" version >/dev/null 2>&1; then
+              echo "npm serves @robosystems/mcp ${VERSION}"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::npm did not serve @robosystems/mcp ${VERSION} within 5 minutes"
+          exit 1
+
+      # Clients that install from the registry run the version it pins, so a
+      # release the registry does not list never reaches them. The ai.robosystems
+      # namespace is proven by DNS on robosystems.ai; the key is a production
+      # environment secret. Skips when this version is already listed, so the
+      # listing is published at most once per release, and a re-run after the
+      # npm upload succeeded still reaches it.
+      - name: Publish to the MCP Registry
+        env:
+          MCP_REGISTRY_DOMAIN: robosystems.ai
+          MCP_REGISTRY_PRIVATE_KEY: ${{ secrets.MCP_REGISTRY_PRIVATE_KEY }}
+        run: |
+          NAME=$(node -p "require('./server.json').name")
+          VERSION=$(node -p "require('./server.json').version")
+          ENCODED=$(node -p "encodeURIComponent(process.argv[1])" "$NAME")
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://registry.modelcontextprotocol.io/v0/servers/${ENCODED}/versions/${VERSION}")
+          if [ "$STATUS" = "200" ]; then
+            echo "${NAME} ${VERSION} is already listed"
+            exit 0
+          fi
+          if [ -z "$MCP_REGISTRY_PRIVATE_KEY" ]; then
+            echo "::error::MCP_REGISTRY_PRIVATE_KEY is not set on the production environment, so ${NAME} ${VERSION} was not listed"
+            exit 1
+          fi
+          mcp-publisher login dns --domain "$MCP_REGISTRY_DOMAIN" --private-key "$MCP_REGISTRY_PRIVATE_KEY"
+          mcp-publisher publish server.json
+          echo "Listed ${NAME} ${VERSION} on the Official MCP Registry"
 
       - name: Create summary
         if: steps.check-published.outputs.already_published == 'false'
@@ -239,5 +336,5 @@ jobs:
 
           if [ "${{ needs.publish.result }}" != "success" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "The version and tag are cut but the package is not on npm. Fix the cause, then **Re-run failed jobs** on this run; a new release is only needed when the code itself is at fault." >> $GITHUB_STEP_SUMMARY
+            echo "The version and tag are cut but the package is not on npm or not listed on the MCP Registry. Fix the cause, then **Re-run failed jobs** on this run; a new release is only needed when the code itself is at fault." >> $GITHUB_STEP_SUMMARY
           fi
