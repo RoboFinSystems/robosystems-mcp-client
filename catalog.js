@@ -177,7 +177,8 @@ export function parseGraphSet(raw) {
     if (alias) aliases.set(alias, id)
     entries.push({ id, alias })
   }
-  if (entries.length === 0) return null
+  // Set but empty must not quietly widen the connection to every graph.
+  if (entries.length === 0) throw new Error('ROBOSYSTEMS_GRAPH_IDS is set but names no graph')
   for (const alias of aliases.keys()) {
     if (ids.has(alias)) {
       throw new Error(`ROBOSYSTEMS_GRAPH_IDS: alias "${alias}" is also a graph id`)

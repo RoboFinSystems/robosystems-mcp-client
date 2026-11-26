@@ -164,6 +164,10 @@ describe('parseGraphSet', () => {
     expect(() => parseGraphSet('bad alias=sec')).toThrow(/not a graph id/)
   })
 
+  it('refuses a set that names no graph instead of widening to every graph', () => {
+    expect(() => parseGraphSet(' , ')).toThrow(/names no graph/)
+  })
+
   it('refuses an alias that is also a graph id', () => {
     expect(() => parseGraphSet(`sec=${PARENT},sec`)).toThrow(/also a graph id/)
   })
