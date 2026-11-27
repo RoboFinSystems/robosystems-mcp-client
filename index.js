@@ -3,23 +3,24 @@
 /**
  * RoboSystems MCP stdio bridge.
  *
- * Two modes, chosen by the environment:
+ * A transparent pipe between a stdio MCP client and one of the platform's MCP
+ * endpoints (Streamable HTTP). Every JSON-RPC message is forwarded verbatim
+ * with the API-key header attached; the bridge adds nothing of its own, so
+ * the tools, descriptions and instructions are the server's.
  *
- * - Proxy (ROBOSYSTEMS_GRAPH_ID or ROBOSYSTEMS_MCP_URL set): a transparent
- *   pipe between a stdio MCP client and one graph's MCP endpoint (Streamable
- *   HTTP). Every JSON-RPC message is forwarded verbatim with the API-key
- *   header attached; the bridge adds nothing of its own.
- * - Catalog (neither set): one connection for every graph the API key
- *   reaches. Four fixed tools take the graph as an argument and forward to
- *   that graph's endpoint, so a subgraph is usable the moment it exists.
- *   ROBOSYSTEMS_READ_ONLY withholds the write tool.
+ * The environment picks the endpoint:
+ *
+ * - Neither ROBOSYSTEMS_GRAPH_ID nor ROBOSYSTEMS_MCP_URL: every graph the API
+ *   key reaches, at /v1/mcp/graphs. ROBOSYSTEMS_GRAPH_IDS and
+ *   ROBOSYSTEMS_READ_ONLY narrow the connection.
+ * - ROBOSYSTEMS_GRAPH_ID: one graph, at /v1/graphs/{graph_id}/mcp.
+ * - ROBOSYSTEMS_MCP_URL: that URL.
  */
 
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { runProxy } from './proxy.js'
-import { parseGraphSet, runCatalog } from './catalog.js'
 
 // Get package version dynamically
 const __filename = fileURLToPath(import.meta.url)
@@ -86,6 +87,73 @@ export function resolveEndpoint({ baseUrl, graphId, mcpUrl }) {
   return `${(baseUrl || 'https://api.robosystems.ai').replace(/\/$/, '')}/v1/graphs/${graphId}/mcp`
 }
 
+/**
+ * The every-graph endpoint, with the connection's settings as its query:
+ * `graphs` (ids or alias=id pairs, `:ro` for read-only) and `read_only`.
+ * The server validates them; they are settings, never credentials.
+ */
+export function resolveGraphsEndpoint({ baseUrl, graphIds, readOnly }) {
+  const url = new URL(
+    `${(baseUrl || 'https://api.robosystems.ai').replace(/\/$/, '')}/v1/mcp/graphs`
+  )
+  if (graphIds && graphIds.trim()) url.searchParams.set('graphs', graphIds.trim())
+  if (readOnly) url.searchParams.set('read_only', 'true')
+  return url.toString()
+}
+
+/** A graph-scoped key by shape: `rfsc` and 64 hex characters. */
+export function isGraphScopedKey(apiKey) {
+  return /^rfsc[0-9a-f]{64}$/.test(String(apiKey ?? ''))
+}
+
+const PROBE_TIMEOUT_MS = 5000
+
+/**
+ * Ask the every-graph endpoint for a `ping` before serving, so a setup that
+ * can never work fails once with a reason instead of on every call. Returns
+ * the reason to stop, or null to go on; an unreachable server is not one,
+ * since it may be back by the first real request.
+ */
+export async function probeGraphsEndpoint({ url, apiKey, version, fetchImpl = fetch }) {
+  let response
+  try {
+    response = await fetchImpl(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        'User-Agent': `robosystems-mcp/${version}`,
+        'X-MCP-Client': version,
+        'X-API-Key': apiKey,
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 'probe', method: 'ping' }),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    })
+  } catch {
+    return null
+  }
+  if (response.status === 404) {
+    return (
+      'This RoboSystems server does not serve /v1/mcp/graphs. Upgrade the server, set ' +
+      'ROBOSYSTEMS_GRAPH_ID to connect one graph, or run the last bridge with the catalog ' +
+      'built in: @robosystems/mcp@1.0'
+    )
+  }
+  if (response.status === 400 || response.status === 401) {
+    let detail = ''
+    try {
+      const body = await response.json()
+      detail = typeof body?.detail === 'string' ? body.detail : ''
+    } catch {
+      // No readable reason: the status says enough.
+    }
+    return response.status === 400
+      ? `ROBOSYSTEMS_GRAPH_IDS or ROBOSYSTEMS_READ_ONLY was refused: ${detail || 'HTTP 400'}`
+      : `ROBOSYSTEMS_API_KEY was refused: ${detail || 'HTTP 401'}`
+  }
+  return null
+}
+
 /** A flag is on for `true`, `1` or `yes`, in any case. */
 export function isEnabled(value) {
   return ['true', '1', 'yes'].includes(
@@ -104,10 +172,10 @@ async function main() {
   })
 
   if (url) {
-    if (process.env.ROBOSYSTEMS_GRAPH_IDS) {
+    if (process.env.ROBOSYSTEMS_GRAPH_IDS || process.env.ROBOSYSTEMS_READ_ONLY) {
       console.error(
-        'ROBOSYSTEMS_GRAPH_IDS is ignored: ROBOSYSTEMS_GRAPH_ID or ROBOSYSTEMS_MCP_URL ' +
-          'selects the single-graph proxy'
+        'ROBOSYSTEMS_GRAPH_IDS and ROBOSYSTEMS_READ_ONLY are ignored: ROBOSYSTEMS_GRAPH_ID or ' +
+          'ROBOSYSTEMS_MCP_URL connects one endpoint as it is'
       )
     }
     void checkForUpdate() // fire-and-forget stale-version warning (stderr only)
@@ -123,16 +191,39 @@ async function main() {
     )
     process.exit(1)
   }
+  if (isGraphScopedKey(apiKey)) {
+    console.error(
+      'This API key is scoped to one graph. Set ROBOSYSTEMS_GRAPH_ID to that graph to ' +
+        'connect it; reaching every graph takes an account-wide key'
+    )
+    process.exit(1)
+  }
 
-  const graphSet = parseGraphSet(process.env.ROBOSYSTEMS_GRAPH_IDS)
-  void checkForUpdate()
-  await runCatalog({
+  const graphIds = process.env.ROBOSYSTEMS_GRAPH_IDS
+  const readOnly = isEnabled(process.env.ROBOSYSTEMS_READ_ONLY)
+  const graphsUrl = resolveGraphsEndpoint({
     baseUrl: process.env.ROBOSYSTEMS_API_URL,
+    graphIds,
+    readOnly,
+  })
+  const refusal = await probeGraphsEndpoint({
+    url: graphsUrl,
     apiKey,
     version: PACKAGE_VERSION,
-    graphSet,
-    readOnly: isEnabled(process.env.ROBOSYSTEMS_READ_ONLY),
   })
+  if (refusal) {
+    console.error(refusal)
+    process.exit(1)
+  }
+
+  void checkForUpdate()
+  console.error(
+    graphIds && graphIds.trim()
+      ? `Graphs: ${graphIds.trim()} (and their subgraphs)`
+      : 'Graphs: every graph the API key reaches'
+  )
+  if (readOnly) console.error('Read-only: write tools are withheld')
+  await runProxy({ url: graphsUrl, apiKey, version: PACKAGE_VERSION })
 }
 
 // Only run as the bridge if this is the main module (works for `node index.js`

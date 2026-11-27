@@ -1,11 +1,10 @@
 /**
- * Streamable HTTP proxy mode.
+ * The Streamable HTTP proxy.
  *
- * Instead of impersonating the MCP server over the REST tool endpoints
- * (GET /mcp/tools + POST /mcp/call-tool), this mode is a transparent pipe
- * between a stdio MCP client (Claude Desktop, or any stdio-only host) and the
- * platform's native MCP endpoint (POST /v1/graphs/{graph_id}/mcp, Streamable
- * HTTP). Every JSON-RPC message read from stdin is forwarded verbatim with the
+ * A transparent pipe between a stdio MCP client (Claude Desktop, or any
+ * stdio-only host) and one of the platform's MCP endpoints: every graph a key
+ * reaches (POST /v1/mcp/graphs) or one graph (POST /v1/graphs/{graph_id}/mcp).
+ * Every JSON-RPC message read from stdin is forwarded verbatim with the
  * API key header attached; JSON and SSE responses are relayed back to stdout
  * message-for-message. Per-session instructions, live tool lists, and streamed
  * progress notifications all pass through untouched — connecting through the
@@ -79,6 +78,9 @@ export function createProxy({ url, apiKey, version, output = process.stdout, fet
   // Captured from the initialize response and echoed back on subsequent
   // requests via the MCP-Protocol-Version header, per Streamable HTTP.
   let protocolVersion = null
+  // Upstream requests still running, by JSON-RPC id, so a cancelled call
+  // stops waiting on the server.
+  const inFlight = new Map()
 
   const deliver = (message) => {
     if (message && typeof message === 'object' && message.result?.protocolVersion) {
@@ -123,11 +125,24 @@ export function createProxy({ url, apiKey, version, output = process.stdout, fet
     // and client→server responses get forwarded but never answered locally.
     const expectsResponse = message.method !== undefined && message.id !== undefined
 
+    // A cancelled call is aborted here and never answered; the notification
+    // still goes upstream.
+    let cancelled = false
+    if (message?.method === 'notifications/cancelled') {
+      inFlight.get(message.params?.requestId)?.abort()
+    }
+    const controller = expectsResponse ? new AbortController() : null
+    if (controller) {
+      controller.signal.addEventListener('abort', () => (cancelled = true))
+      inFlight.set(message.id, controller)
+    }
+
     try {
       const response = await fetchImpl(url, {
         method: 'POST',
         headers: buildHeaders(),
         body: raw,
+        ...(controller ? { signal: controller.signal } : {}),
       })
 
       // 202 Accepted — notification or response delivered, nothing to relay
@@ -161,6 +176,7 @@ export function createProxy({ url, apiKey, version, output = process.stdout, fet
         deliver(JSON.parse(text))
       }
     } catch (error) {
+      if (cancelled) return
       if (expectsResponse) {
         deliver({
           jsonrpc: '2.0',
@@ -173,6 +189,8 @@ export function createProxy({ url, apiKey, version, output = process.stdout, fet
       } else {
         console.error(`Proxy request failed: ${error.message}`)
       }
+    } finally {
+      if (controller && inFlight.get(message.id) === controller) inFlight.delete(message.id)
     }
   }
 
