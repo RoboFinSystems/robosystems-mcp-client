@@ -3,27 +3,28 @@
 [![npm version](https://badge.fury.io/js/@robosystems%2Fmcp.svg)](https://www.npmjs.com/package/@robosystems/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**The stdio bridge to the MCP server of [RoboSystems](https://github.com/RoboFinSystems/robosystems), the open-source knowledge graph for finance.** Every graph is an MCP server over the Streamable HTTP transport; `@robosystems/mcp` connects a stdio MCP client to them with an API key. It runs in one of two modes:
+**The stdio bridge to the MCP server of [RoboSystems](https://github.com/RoboFinSystems/robosystems), the open-source knowledge graph for finance.** RoboSystems serves MCP over the Streamable HTTP transport; `@robosystems/mcp` connects a client that only runs local stdio servers to it, with an API key. It forwards every message unchanged, so the tools and instructions are the server's own. It connects one of two endpoints:
 
-- **Catalog**: one connection for every graph your key reaches. Four tools take the graph as an argument, so you can work across graphs and use a subgraph the moment it is created
-- **Proxy**: one connection for one graph. The bridge forwards every message unchanged, and the tools and instructions are the server's own
+- **Every graph** (the default): one connection for every graph your key reaches. Four tools take the graph as an argument, so you can work across graphs and use a subgraph the moment it is created
+- **One graph**: that graph's own tools, with `ROBOSYSTEMS_GRAPH_ID` set
 
 Diagnostics go to stderr, including a notice at startup when a newer version is on npm.
 
-## Connect directly if one graph is enough
+## Connect directly if your client speaks HTTP
 
-An MCP client with HTTP transport does not need this package to reach a single graph. Connect it to the hosted server instead:
+An MCP client with HTTP transport does not need this package. Connect it to the hosted server instead:
 
 - **OAuth**: `https://api.robosystems.ai/v1/mcp`. Sign in and choose the graph on the consent screen. `https://api.robosystems.ai/v1/mcp/roboledger` is the same for RoboLedger graphs, with the accounting tools only
-- **API key**: `https://api.robosystems.ai/v1/graphs/{graph_id}/mcp`, with the key in the `X-API-Key` header and never in the URL. The URL picks the graph: `sec` for the public SEC repository, your graph id for your own
+- **API key, every graph**: `https://api.robosystems.ai/v1/mcp/graphs`, with an account-wide key in the `X-API-Key` header and never in the URL. This is the endpoint the bridge connects by default
+- **API key, one graph**: `https://api.robosystems.ai/v1/graphs/{graph_id}/mcp`. The URL picks the graph: `sec` for the public SEC repository, your graph id for your own
 
 ```bash
-claude mcp add --transport http robosystems-sec \
-  https://api.robosystems.ai/v1/graphs/sec/mcp \
+claude mcp add --transport http robosystems \
+  https://api.robosystems.ai/v1/mcp/graphs \
   --header "X-API-Key: <your key>"
 ```
 
-The app's MCP page has the snippet for each client. A direct connection is one graph: each further graph or subgraph is another connection. The bridge authenticates with an API key only, never through the OAuth endpoints.
+The app's MCP page has the snippet for each client. The bridge is for clients that cannot do this: ones that only take stdio `command` entries, or that cannot send a header. It authenticates with an API key only, never through the OAuth endpoints.
 
 ## Install
 
@@ -43,11 +44,11 @@ No install step: MCP clients run it through `npx`. Tested on Node.js 22, 24 and 
 }
 ```
 
-This is the shape of `claude_desktop_config.json` and of other clients that take stdio `command` entries. With the key alone the bridge runs as a catalog; add `ROBOSYSTEMS_GRAPH_ID` to proxy one graph. Keep `@latest` in the arguments: a global `npm install -g @robosystems/mcp` can shadow `npx` and pin an old version.
+This is the shape of `claude_desktop_config.json` and of other clients that take stdio `command` entries. With the key alone the bridge reaches every graph; add `ROBOSYSTEMS_GRAPH_ID` to connect one graph. Keep `@latest` in the arguments: a global `npm install -g @robosystems/mcp` can shadow `npx` and pin an old version.
 
-## Catalog mode
+## Every graph
 
-The bridge serves four tools, the same on every connection:
+The server serves four tools on this endpoint, the same on every connection:
 
 | Tool              | Does                                                                                                                     |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -56,7 +57,9 @@ The bridge serves four tools, the same on every connection:
 | `call-read-tool`  | Runs one of a graph's read tools                                                                                         |
 | `call-write-tool` | Runs one of a graph's write tools                                                                                        |
 
-Every call names its graph. There is no current graph and nothing to switch, so two conversations sharing one bridge cannot redirect each other. Each call is forwarded to that graph's own endpoint with your key, where the server checks access as it does for a direct connection.
+Every call names its graph. There is no current graph and nothing to switch, so two conversations sharing one bridge cannot redirect each other. The server checks your key's access to the named graph on each call, as it does for a direct connection.
+
+This needs an account-wide key and a server that serves `/v1/mcp/graphs`. A key scoped to one graph connects that graph with `ROBOSYSTEMS_GRAPH_ID`. For a self-hosted stack that predates the endpoint, upgrade it, or run the last bridge with the catalog built in (`@robosystems/mcp@1.0`). The bridge says which at startup and exits.
 
 A subgraph is a graph: `create-subgraph` on the parent (through `call-write-tool`) returns an id that works as `graph` on the next call. The read and write split follows the hints the server publishes for each tool, so a client can approve reads without prompting and still show each write by name.
 
@@ -69,7 +72,7 @@ To limit a connection to some graphs, and to name them, set `ROBOSYSTEMS_GRAPH_I
 }
 ```
 
-Each entry is a graph id or `alias=id`. The connection then reaches those graphs and their subgraphs, and refuses any other. A key scoped to one graph cannot list the account, so set its graph here.
+Each entry is a graph id or `alias=id`. The connection then reaches those graphs and their subgraphs, and refuses any other.
 
 ### Read-only
 
@@ -82,18 +85,18 @@ Either way the graph's write tools are left out of `get-tools`, and the server s
 
 ## Configuration
 
-The bridge reads six environment variables and takes no command-line arguments.
+The bridge reads six environment variables and takes no command-line arguments. `ROBOSYSTEMS_GRAPH_IDS` and `ROBOSYSTEMS_READ_ONLY` are passed to the server, which applies them.
 
 | Variable                | Purpose                                                                                     | Default                      |
 | ----------------------- | ------------------------------------------------------------------------------------------- | ---------------------------- |
-| `ROBOSYSTEMS_API_KEY`   | API key, sent as `X-API-Key`; account-wide or scoped to one graph. Required in catalog mode | none                         |
-| `ROBOSYSTEMS_GRAPH_IDS` | Catalog mode: the graphs to reach, as ids or `alias=id` pairs separated by commas           | every graph the key reaches  |
-| `ROBOSYSTEMS_READ_ONLY` | Catalog mode: `true` withholds every write tool                                             | `false`                      |
-| `ROBOSYSTEMS_GRAPH_ID`  | Proxy mode: the one graph to connect, `sec`, a graph id, or a subgraph id such as `kg…_dev` | none                         |
+| `ROBOSYSTEMS_API_KEY`   | API key, sent as `X-API-Key`. Reaching every graph takes an account-wide key                | none                         |
+| `ROBOSYSTEMS_GRAPH_IDS` | Every graph: the graphs to reach, as ids or `alias=id` pairs separated by commas            | every graph the key reaches  |
+| `ROBOSYSTEMS_READ_ONLY` | Every graph: `true` withholds every write tool                                              | `false`                      |
+| `ROBOSYSTEMS_GRAPH_ID`  | One graph: the graph to connect, `sec`, a graph id, or a subgraph id such as `kg…_dev`      | none                         |
 | `ROBOSYSTEMS_API_URL`   | Base URL of the API. A graph's endpoint is `{ROBOSYSTEMS_API_URL}/v1/graphs/{graph_id}/mcp` | `https://api.robosystems.ai` |
-| `ROBOSYSTEMS_MCP_URL`   | Proxy mode: a full endpoint URL. Overrides the derived one, and needs no graph id           | derived                      |
+| `ROBOSYSTEMS_MCP_URL`   | A full endpoint URL. Overrides the derived one, and needs no graph id                       | derived                      |
 
-Setting `ROBOSYSTEMS_GRAPH_ID` or `ROBOSYSTEMS_MCP_URL` selects proxy mode. For a self-hosted stack, set `ROBOSYSTEMS_API_URL` to its address (`http://localhost:8000` in local development). See [Authentication & API Keys](https://robosystems.ai/docs/technical/authentication-and-api-keys) and [Self-Hosting on a Server](https://robosystems.ai/docs/technical/self-hosting-on-a-server).
+Setting `ROBOSYSTEMS_GRAPH_ID` or `ROBOSYSTEMS_MCP_URL` connects that one endpoint, and `ROBOSYSTEMS_GRAPH_IDS` and `ROBOSYSTEMS_READ_ONLY` are then ignored. For a self-hosted stack, set `ROBOSYSTEMS_API_URL` to its address (`http://localhost:8000` in local development). See [Authentication & API Keys](https://robosystems.ai/docs/technical/authentication-and-api-keys) and [Self-Hosting on a Server](https://robosystems.ai/docs/technical/self-hosting-on-a-server).
 
 ## Documentation
 

@@ -194,6 +194,52 @@ describe('createProxy', () => {
     expect(message.error.message).toContain('socket hang up')
   })
 
+  it('aborts the upstream request of a cancelled call and never answers it', async () => {
+    let upstream
+    const fetchImpl = vi.fn((_url, init) => {
+      if (!init.signal) return Promise.resolve(acceptedResponse())
+      upstream = init.signal
+      return new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => reject(new Error('aborted')))
+      })
+    })
+    const output = makeOutput()
+    const proxy = createProxy({ url: URL, apiKey: 'k', version: '0.0.0', output, fetchImpl })
+
+    const call = proxy.handleLine('{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{}}')
+    await proxy.handleLine(
+      '{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":4}}'
+    )
+    await call
+
+    expect(upstream.aborted).toBe(true)
+    expect(output.lines).toEqual([])
+    // The notification itself still went upstream.
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves other calls running when one is cancelled', async () => {
+    const fetchImpl = vi.fn((_url, init) => {
+      const { id } = JSON.parse(init.body)
+      if (id === undefined) return Promise.resolve(acceptedResponse())
+      if (id === 5) return Promise.resolve(jsonResponse({ jsonrpc: '2.0', id: 5, result: {} }))
+      return new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => reject(new Error('aborted')))
+      })
+    })
+    const output = makeOutput()
+    const proxy = createProxy({ url: URL, apiKey: 'k', version: '0.0.0', output, fetchImpl })
+
+    const slow = proxy.handleLine('{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{}}')
+    await proxy.handleLine('{"jsonrpc":"2.0","id":5,"method":"tools/list"}')
+    await proxy.handleLine(
+      '{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":4}}'
+    )
+    await slow
+
+    expect(output.messages().map((m) => m.id)).toEqual([5])
+  })
+
   it('answers an unparseable stdin line with a parse error', async () => {
     const fetchImpl = vi.fn()
     const output = makeOutput()
